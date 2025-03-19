@@ -1,0 +1,100 @@
+#ifndef DISK_MANAGER_H
+#define DISK_MANAGER_H
+
+#include <vector>
+#include <utility>
+#include <cstddef>
+
+// TODO: 
+// 1. 磁盘分配算法可以修改
+// 2. 未引入Tag
+// 3. 可以分散存储在多个碎片块中
+
+/**
+ * 磁盘管理器类，用于模拟对磁盘的操作
+ * 
+ * 管理N个磁盘，每个磁盘包含V个存储单元
+ * 提供分配、回收和查询空闲空间的功能
+ */
+class DiskManager {
+public:
+    /**
+     * 构造函数，初始化磁盘管理器
+     * 参数 diskNum: 磁盘数量N
+     * 参数 unitNum: 每个磁盘的存储单元数V
+     */
+    DiskManager(int diskNum, int unitNum);
+
+    /**
+     * 析构函数
+     */
+    ~DiskManager();
+
+    /**
+     * 分配指定磁盘上的存储单元
+     * 参数 diskId: 磁盘ID (1 <= diskId <= N)
+     * 参数 size: 需要分配的存储单元数量
+     * 返回值: 分配的存储单元块列表，每个pair表示<起始位置, 长度>
+     *        如果找不到连续空间，会尝试碎片化存储在多个块中
+     *        如果分配失败则返回空向量
+     */
+    std::vector<std::pair<int, int>> allocateOnDisk(int diskId, int size);
+
+    /**
+     * 在指定磁盘的指定位置分配存储单元
+     * 参数 diskId: 磁盘ID (1 <= diskId <= N)
+     * 参数 position: 指定的起始位置 (1 <= position <= V)
+     * 参数 size: 需要分配的存储单元数量
+     * 返回值: 分配的存储单元块列表，每个pair表示<起始位置, 长度>
+     *        如果指定位置没有足够空间则返回空向量
+     */
+    std::vector<std::pair<int, int>> allocateOnDiskAtPosition(int diskId, int position, int size);
+
+    /**
+     * 在任意磁盘上分配存储单元
+     * 参数 size: 需要分配的存储单元数量
+     * 参数 diskId: 如果分配成功，返回分配到的磁盘ID
+     * 返回值: 分配的存储单元块列表，每个pair表示<起始位置, 长度>，如果分配失败则返回空向量
+     */
+    std::vector<std::pair<int, int>> allocate(int size, int& diskId);
+
+    /**
+     * 释放指定磁盘上的存储单元
+     * 参数 diskId: 磁盘ID (1 <= diskId <= N)
+     * 参数 blocks: 存储单元块列表，每个pair表示<起始位置, 长度>
+     * 返回值: 是否释放成功
+     */
+    bool freeOnDisk(int diskId, const std::vector<std::pair<int, int>>& blocks);
+
+    /**
+     * 查询指定磁盘的可用存储单元数量
+     * 参数 diskId: 磁盘ID (1 <= diskId <= N)
+     * 返回值: 可用存储单元数量
+     */
+    int getFreeSpaceOnDisk(int diskId) const;
+
+    /**
+     * 获取总磁盘数量
+     * 返回值: 磁盘数量N
+     */
+    int getDiskCount() const;
+
+    /**
+     * 获取每个磁盘的存储单元数量
+     * 返回值: 存储单元数量V
+     */
+    int getUnitCount() const;
+
+private:
+    int n;  // 磁盘数量
+    int v;  // 每个磁盘的存储单元数量
+    
+    // 使用vector存储空闲空间块，每个pair表示<起始位置, 长度>
+    std::vector<std::vector<std::pair<int, int>>> freeSpaces;
+    
+    // 添加辅助方法来维护空闲空间列表
+    void insertFreeBlock(int diskId, int start, int length);
+    void mergeFreeBlocks(int diskId);
+};
+
+#endif // DISK_MANAGER_H 

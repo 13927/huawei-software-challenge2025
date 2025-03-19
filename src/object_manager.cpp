@@ -1,0 +1,150 @@
+#include "object_manager.h"
+#include <algorithm>
+#include <cstdlib>
+#include <ctime>
+
+// Object类构造函数
+Object::Object(int id, int size, int tag) 
+    : objectId(id), objectSize(size), objectTag(tag) {
+    // 初始化副本，但不分配空间
+    for (int i = 0; i < REP_NUM; i++) {
+        replicas[i] = StorageUnit();
+    }
+}
+
+// 获取指定索引的副本
+const StorageUnit& Object::getReplica(int replicaIndex) const {
+    if (replicaIndex < 0 || replicaIndex >= REP_NUM) {
+        // 如果索引无效，返回第一个副本（或者可以抛出异常）
+        return replicas[0];
+    }
+    return replicas[replicaIndex];
+}
+
+// 设置指定索引的副本信息
+void Object::setReplica(int replicaIndex, int diskId, const std::vector<std::pair<int, int>>& blockLists) {
+    if (replicaIndex < 0 || replicaIndex >= REP_NUM) {
+        return; // 索引无效，不进行操作
+    }
+    
+    replicas[replicaIndex].diskId = diskId;
+    replicas[replicaIndex].blockLists = blockLists;
+}
+
+// 创建新对象
+bool ObjectManager::createObject(int id, int size, int tag) {
+    // 检查对象ID是否已存在
+    if (objects.find(id) != objects.end()) {
+        return false; // 对象ID已存在
+    }
+    
+    // 创建对象
+    Object newObject(id, size, tag);
+    
+    // 分配磁盘空间
+    if (!allocateReplicas(newObject)) {
+        return false; // 无法分配足够的空间
+    }
+    
+    // 添加到对象映射中
+    objects[id] = newObject;
+    return true;
+}
+
+// 为对象分配副本存储位置
+bool ObjectManager::allocateReplicas(Object& obj) {
+    int size = obj.getSize();
+    std::vector<int> usedDisks; // 记录已使用的磁盘ID
+    
+    // 为每个副本分配空间
+    for (int i = 0; i < REP_NUM; i++) {
+        int selectedDiskId = -1;
+        
+        // 创建磁盘ID和对应的空闲空间大小的数组
+        std::vector<std::pair<int, int>> diskLoads;
+        for (int diskId = 1; diskId <= diskManager.getDiskCount(); diskId++) {
+            // 检查该磁盘是否已被当前对象的其他副本使用
+            if (std::find(usedDisks.begin(), usedDisks.end(), diskId) == usedDisks.end()) {
+                // 获取磁盘的空闲空间大小
+                int freeSpace = diskManager.getFreeSpaceOnDisk(diskId);
+                diskLoads.push_back(std::make_pair(diskId, freeSpace));
+            }
+        }
+        
+        // 按照空闲空间从大到小排序（即负载从低到高）
+        std::sort(diskLoads.begin(), diskLoads.end(),
+            [](const std::pair<int, int>& a, const std::pair<int, int>& b) {
+                return a.second > b.second; // 空闲空间大的排在前面
+            });
+        
+        // 尝试按照排序后的顺序在磁盘上分配空间
+        for (const auto& diskLoad : diskLoads) {
+            int diskId = diskLoad.first;
+            int freeSpace = diskLoad.second;
+            
+            // 检查空闲空间是否足够
+            if (freeSpace >= size) {
+                // 尝试在该磁盘上分配空间
+                std::vector<std::pair<int, int>> allocatedBlocks = diskManager.allocateOnDisk(diskId, size);
+                if (!allocatedBlocks.empty()) {
+                    // 分配成功
+                    obj.setReplica(i, diskId, allocatedBlocks);
+                    usedDisks.push_back(diskId);
+                    selectedDiskId = diskId;
+                    break;
+                }
+            }
+        }
+        
+        // 如果无法找到可用磁盘，回滚之前的分配并返回失败
+        if (selectedDiskId == -1) {
+            // 回滚之前分配的副本
+            for (int j = 0; j < i; j++) {
+                const StorageUnit& replica = obj.getReplica(j);
+                diskManager.freeOnDisk(replica.diskId, replica.blockLists);
+            }
+            return false;
+        }
+    }
+    
+    return true;
+}
+
+// 删除对象
+bool ObjectManager::deleteObject(int id) {
+    auto it = objects.find(id);
+    if (it == objects.end()) {
+        return false; // 对象不存在或已被删除
+    }
+    
+    // 获取对象
+    Object& obj = it->second;
+    
+    // 释放所有副本的磁盘空间
+    for (int i = 0; i < REP_NUM; i++) {
+        const StorageUnit& replica = obj.getReplica(i);
+        if (replica.diskId > 0) {
+            diskManager.freeOnDisk(replica.diskId, replica.blockLists);
+        }
+    }
+    
+    // 删除对象信息
+    objects.erase(it);
+    return true;
+}
+
+// 获取对象（如果对象不存在或已删除则返回nullptr）
+std::shared_ptr<const Object> ObjectManager::getObject(int id) const {
+    auto it = objects.find(id);
+    if (it != objects.end()) {
+        // 创建一个共享指针，指向存储在map中的对象
+        return std::make_shared<const Object>(it->second);
+    }
+    return nullptr;
+}
+
+// 检查对象是否存在且未被删除
+bool ObjectManager::objectExists(int id) const {
+    auto it = objects.find(id);
+    return (it != objects.end() );
+} 
