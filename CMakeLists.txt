@@ -8,10 +8,13 @@ set(EXECUTABLE_OUTPUT_PATH  ${PROJECT_SOURCE_DIR}/) # 不要修改
 option(BUILD_SHARED_LIBS    ""  OFF) # 不要修改
 
 aux_source_directory(./                     cur_src) # 不要修改
-# 如果需要，可以使用aux_source_directory增加目录
-aux_source_directory(./src                  src_dir)
+aux_source_directory(./src                  src_dir) # 增加 src 目录
 
-add_executable(code_craft                   ${cur_src} ${src_dir}) # ！！！不要修改 code_craft 名称，直接影响结果；可以根据语法在 ${cur_src} 后面追加
+# 直接设置 CMAKE_CXX_FLAGS 和 CMAKE_C_FLAGS，开启最高优化
+set(CMAKE_CXX_FLAGS "-O3 -march=native -DNDEBUG")
+set(CMAKE_C_FLAGS "-O3 -march=native -DNDEBUG")
+
+add_executable(code_craft                   ${cur_src} ${src_dir}) # 不要修改 code_craft 名称
 
 # 以下可以根据需要增加需要链接的库
 #if (NOT WIN32)
