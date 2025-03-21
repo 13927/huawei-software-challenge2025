@@ -15,43 +15,45 @@
 #include "constants.h"
 
 // 读取请求状态
-enum ReadRequestStatus {
-    REQUEST_PENDING,    // 等待处理
-    REQUEST_PROCESSING, // 正在处理
-    REQUEST_COMPLETED   // 已完成
+enum RequestStatus {
+    REQUEST_PENDING,     // 等待处理
+    REQUEST_PROCESSING,  // 处理中
+    REQUEST_COMPLETED    // 已完成
 };
 
-// 读取请求结构体
+// 读取请求数据结构
 struct ReadRequest {
-    int requestId;                          // 请求ID
-    int objectId;                           // 对象ID
-    ReadRequestStatus status;               // 请求状态
-    std::unordered_map<int, std::set<int>> remainingUnits;  // 每个磁盘上剩余未读取的单元 <diskId, set<unitPosition>>
-    int totalRemainingUnits;                // 剩余未读取的单元总数
+    int requestId;                                  // 请求ID
+    int objectId;                                   // 读取的对象ID
+    RequestStatus status;                           // 请求状态
+    std::unordered_map<int, std::set<int>> remainingUnits; // 每个磁盘上需要读取的单元 (磁盘ID -> 单元位置集合)
+    int totalRemainingUnits;                        // 总剩余需要读取的单元数
     
-    // 默认构造函数
-    ReadRequest() 
-        : requestId(0), objectId(0), status(REQUEST_PENDING), totalRemainingUnits(0) {}
-    
-    ReadRequest(int reqId, int objId) 
-        : requestId(reqId), objectId(objId), status(REQUEST_PROCESSING), totalRemainingUnits(0) {}
+    ReadRequest() : requestId(0), objectId(0), status(REQUEST_PENDING), totalRemainingUnits(0) {}
+    ReadRequest(int reqId, int objId) : requestId(reqId), objectId(objId), status(REQUEST_PENDING), totalRemainingUnits(0) {}
 };
 
-
+// 读取请求管理器类
 class ReadRequestManager {
 private:
-    ObjectManager& objectManager;          // 对象管理器引用
-    DiskHeadManager& diskHeadManager;      // 磁盘磁头管理器引用
+    ObjectManager& objectManager;                        // 对象管理器引用
+    DiskHeadManager& diskHeadManager;                    // 磁盘头管理器引用
     
-    std::unordered_map<int, ReadRequest> requests;  // 所有读取请求 <requestId, ReadRequest>
+    std::unordered_map<int, ReadRequest> requests;       // 所有请求 (请求ID -> 请求)
+    std::vector<int> pendingRequests;                    // 等待处理的请求ID列表
+    std::unordered_set<int> processingRequests;          // 正在处理的请求ID集合
+    std::unordered_set<int> completedRequests;           // 当前时间片完成的请求ID集合
+    
+    // 对象ID到请求ID的映射，用于快速找到与对象相关的读取请求
     std::unordered_map<int, std::unordered_set<int>> objectToRequests;
-    std::vector<int> pendingRequests;  // 等待处理的请求 <requestId, ReadRequest>
-    std::unordered_set<int> processingRequests;     // 正在处理的请求ID
-    std::set<int> completedRequests;                // 已完成的请求ID（当前时间片）
     
-    // 更新请求状态
-    void updateRequestStatus(int requestId, const std::unordered_map<int, std::vector<int>>& readUnits);
+    // 磁盘块到读取请求的映射，用于高效更新请求状态
+    // 磁盘ID -> (单元位置 -> 请求ID集合)
+    std::unordered_map<int, std::unordered_map<int, std::unordered_set<int>>> blockToRequests;
     
+    // 用于负载均衡的磁盘计数器
+    // std::vector<int> diskLoadCounter;
+
     // 获取负载最小的磁盘
     int getLeastLoadedDisk(const std::vector<int>& availableDisks);
     
@@ -60,33 +62,36 @@ public:
     
     // 添加读取请求
     bool addReadRequest(int requestId, int objectId);
-
+    
+    // 分配读取请求（将等待的请求变为处理中）
     bool allocateReadRequests();
     
-    // 执行当前时间片的任务
+    // 更新请求状态
+    void updateAllRequestsStatus(const std::unordered_map<int, std::vector<int>>& readUnits);
+    
+    // 取消某个对象的所有读取请求
+    std::vector<int> cancelRequestsByObjectId(int objectId);
+    
+    // 执行一个时间片
     void executeTimeSlice();
     
-    // 获取当前时间片完成的读取请求
-    std::vector<int> getCompletedRequests() const;
-    
-    // 获取请求总数
-    int getTotalRequestCount() const;
-    
-    // 获取等待处理的请求数
-    int getPendingRequestCount() const;
-    
-    // 获取正在处理的请求数
-    int getProcessingRequestCount() const;
-    
-    // 获取已完成的请求总数（所有时间片）
-    int getCompletedRequestCount() const;
-    
-    // 重置时间片，准备执行下一个时间片
+    // 重置时间片数据
     void resetTimeSlice();
     
-    // 根据对象ID取消所有相关的读取请求，并删除对象
-    // 返回被取消的请求ID列表
-    std::vector<int> cancelRequestsByObjectId(int objectId);
+    // 获取完成的请求列表
+    std::vector<int> getCompletedRequests() const;
+    
+    // 获取请求数量信息
+    int getTotalRequestCount() const;
+    int getProcessingRequestCount() const;
+    int getCompletedRequestCount() const;
+    int getPendingRequestCount() const;
+    
+    // 注册块到请求的映射关系
+    void registerBlockToRequest(int diskId, int unitPos, int requestId);
+    
+    // 取消块到请求的映射关系
+    void unregisterBlockToRequest(int diskId, int unitPos, int requestId);
 };
 
 #endif // READ_REQUEST_MANAGER_H 

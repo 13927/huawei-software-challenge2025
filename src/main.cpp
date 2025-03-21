@@ -219,8 +219,7 @@ int main() {
         handle_delete_events(readRequestManager);
         handle_write_events(objectManager);
         handle_read_events(readRequestManager);
-    }
-    
+    }    
     
     return 0;
 } 

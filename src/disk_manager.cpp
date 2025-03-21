@@ -19,7 +19,9 @@ DiskManager::~DiskManager() {
 }
 
 void DiskManager::insertFreeBlock(int diskId, int start, int length) {
+#ifndef NDEBUG
     if (length <= 0) return; // 忽略长度为0或负数的块
+#endif
     
     auto& blocks = freeSpaces[diskId];
     
@@ -73,9 +75,11 @@ void DiskManager::mergeFreeBlocks(int diskId) {
 }
 
 std::vector<std::pair<int, int>> DiskManager::allocateOnDisk(int diskId, int size) {
+#ifndef NDEBUG
     if (diskId < 1 || diskId > n || size <= 0 || size > v) {
         return {}; // 参数错误，返回空向量
     }
+#endif
     
     // 预先检查：判断该磁盘是否有足够的空闲空间
     int totalFreeSpace = getFreeSpaceOnDisk(diskId);
@@ -166,10 +170,12 @@ std::vector<std::pair<int, int>> DiskManager::allocateOnDisk(int diskId, int siz
 }
 
 std::vector<std::pair<int, int>> DiskManager::allocateOnDiskAtPosition(int diskId, int position, int size) {
+#ifndef NDEBUG
     if (diskId < 1 || diskId > n || position < 1 || position > v || 
         size <= 0 || position + size - 1 > v) {
         return {}; // 参数错误，返回空向量
     }
+#endif
     
     // 预先检查：判断该磁盘是否有足够的总空闲空间
     int totalFreeSpace = getFreeSpaceOnDisk(diskId);
@@ -242,10 +248,12 @@ std::vector<std::pair<int, int>> DiskManager::allocateOnDiskAtPosition(int diskI
 }
 
 std::vector<std::pair<int, int>> DiskManager::allocate(int size, int& diskId) {
+#ifndef NDEBUG
     if (size <= 0 || size > v) {
         diskId = -1;
         return {}; // 参数错误，返回空向量
     }
+#endif
     
     // 预先检查：先判断是否有磁盘有足够的空闲空间
     bool hasSufficientSpace = false;
@@ -295,6 +303,7 @@ std::vector<std::pair<int, int>> DiskManager::allocate(int size, int& diskId) {
 }
 
 bool DiskManager::freeOnDisk(int diskId, const std::vector<std::pair<int, int>>& blocks) {
+#ifndef NDEBUG
     if (diskId < 1 || diskId > n || blocks.empty()) {
         return false; // 参数错误
     }
@@ -307,18 +316,23 @@ bool DiskManager::freeOnDisk(int diskId, const std::vector<std::pair<int, int>>&
         if (start < 1 || start + length - 1 > v || length <= 0) {
             return false; // 块范围错误
         }
-        
-        // 将块直接插入到空闲列表中
-        insertFreeBlock(diskId, start, length);
+    }
+#endif
+    
+    // 将块直接插入到空闲列表中
+    for (const auto& block : blocks) {
+        insertFreeBlock(diskId, block.first, block.second);
     }
     
     return true;
 }
 
 int DiskManager::getFreeSpaceOnDisk(int diskId) const {
+#ifndef NDEBUG
     if (diskId < 1 || diskId > n) {
         return 0; // 参数错误
     }
+#endif
     
     const auto& blocks = freeSpaces[diskId];
     int freeCount = 0;

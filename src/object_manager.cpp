@@ -14,18 +14,22 @@ Object::Object(int id, int size, int tag)
 
 // 获取指定索引的副本
 const StorageUnit& Object::getReplica(int replicaIndex) const {
+#ifndef NDEBUG
     if (replicaIndex < 0 || replicaIndex >= REP_NUM) {
         // 如果索引无效，返回第一个副本（或者可以抛出异常）
         return replicas[0];
     }
+#endif
     return replicas[replicaIndex];
 }
 
 // 设置指定索引的副本信息
 void Object::setReplica(int replicaIndex, int diskId, const std::vector<std::pair<int, int>>& blockLists) {
+#ifndef NDEBUG
     if (replicaIndex < 0 || replicaIndex >= REP_NUM) {
         return; // 索引无效，不进行操作
     }
+#endif
     
     replicas[replicaIndex].diskId = diskId;
     replicas[replicaIndex].blockLists = blockLists;
@@ -34,9 +38,11 @@ void Object::setReplica(int replicaIndex, int diskId, const std::vector<std::pai
 // 创建新对象
 bool ObjectManager::createObject(int id, int size, int tag) {
     // 检查对象ID是否已存在
+#ifndef NDEBUG
     if (objects.find(id) != objects.end()) {
         return false; // 对象ID已存在
     }
+#endif
     
     // 创建对象
     Object newObject(id, size, tag);
@@ -113,9 +119,11 @@ bool ObjectManager::allocateReplicas(Object& obj) {
 // 删除对象
 bool ObjectManager::deleteObject(int id) {
     auto it = objects.find(id);
+#ifndef NDEBUG
     if (it == objects.end()) {
         return false; // 对象不存在或已被删除
     }
+#endif
     
     // 获取对象
     Object& obj = it->second;
@@ -136,15 +144,20 @@ bool ObjectManager::deleteObject(int id) {
 // 获取对象（如果对象不存在或已删除则返回nullptr）
 std::shared_ptr<const Object> ObjectManager::getObject(int id) const {
     auto it = objects.find(id);
+#ifndef NDEBUG
     if (it != objects.end()) {
         // 创建一个共享指针，指向存储在map中的对象
         return std::make_shared<const Object>(it->second);
     }
     return nullptr;
+#else
+    // 优化版本：直接返回
+    return (it != objects.end()) ? std::make_shared<const Object>(it->second) : nullptr;
+#endif
 }
 
 // 检查对象是否存在且未被删除
 bool ObjectManager::objectExists(int id) const {
     auto it = objects.find(id);
-    return (it != objects.end() );
+    return (it != objects.end());
 } 

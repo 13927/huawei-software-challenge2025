@@ -21,11 +21,13 @@ void DiskHeadManager::resetTimeSlice() {
 }
 
 bool DiskHeadManager::addReadRequest(int diskId, int unitPosition) {
+#ifndef NDEBUG
     // 检查参数的有效性
     if (diskId < 1 || diskId > diskCount || 
         unitPosition < 1 || unitPosition > unitCount) {
         return false;
     }
+#endif
     
     // 添加读取请求
     diskReadUnits[diskId].insert(unitPosition);
@@ -33,6 +35,7 @@ bool DiskHeadManager::addReadRequest(int diskId, int unitPosition) {
 }
 
 bool DiskHeadManager::addReadRequests(int diskId, const std::vector<int>& unitPositions) {
+#ifndef NDEBUG
     // 检查磁盘ID的有效性
     if (diskId < 1 || diskId > diskCount) {
         return false;
@@ -48,14 +51,23 @@ bool DiskHeadManager::addReadRequests(int diskId, const std::vector<int>& unitPo
         }
     }
     return success;
+#else
+    // 直接添加所有读取请求
+    for (int pos : unitPositions) {
+        diskReadUnits[diskId].insert(pos);
+    }
+    return true;
+#endif
 }
 
 bool DiskHeadManager::cancelReadRequest(int diskId, int unitPosition) {
+#ifndef NDEBUG
     // 检查参数的有效性
     if (diskId < 1 || diskId > diskCount || 
         unitPosition < 1 || unitPosition > unitCount) {
         return false;
     }
+#endif
     
     // 如果存在该读取请求，则移除
     auto& readUnits = diskReadUnits[diskId];
@@ -68,6 +80,7 @@ bool DiskHeadManager::cancelReadRequest(int diskId, int unitPosition) {
 }
 
 bool DiskHeadManager::cancelReadRequests(int diskId, const std::vector<int>& unitPositions) {
+#ifndef NDEBUG
     // 检查磁盘ID的有效性
     if (diskId < 1 || diskId > diskCount) {
         return false;
@@ -79,6 +92,7 @@ bool DiskHeadManager::cancelReadRequests(int diskId, const std::vector<int>& uni
             return false;
         }
     }
+#endif
 
     // 移除所有读取请求
     for (int pos : unitPositions) {
@@ -89,10 +103,12 @@ bool DiskHeadManager::cancelReadRequests(int diskId, const std::vector<int>& uni
 }
 
 void DiskHeadManager::cancelAllReadRequests(int diskId) {
+#ifndef NDEBUG
     // 检查磁盘ID的有效性
     if (diskId < 1 || diskId > diskCount) {
         return;
     }
+#endif
     
     // 清空该磁盘的所有读取请求
     diskReadUnits[diskId].clear();
@@ -153,7 +169,9 @@ void DiskHeadManager::generateTasksForDisk(int diskId) {
             
             // 更新磁头状态
             headStates[diskId].lastAction = ACTION_READ;
-            headStates[diskId].lastTokenCost = readCost;            
+            headStates[diskId].lastTokenCost = readCost;    
+
+            diskReadUnits[diskId].erase(nextUnit);       
             continue;
         }
         
@@ -234,16 +252,20 @@ int DiskHeadManager::calculateReadTokenCost(int diskId) {
 }
 
 int DiskHeadManager::getHeadPosition(int diskId) const {
+#ifndef NDEBUG
     if (diskId < 1 || diskId > diskCount) {
         return -1;
     }
+#endif
     return headStates[diskId].currentPosition;
 }
 
 void DiskHeadManager::clearTaskQueue(int diskId) {
+#ifndef NDEBUG
     if (diskId < 1 || diskId > diskCount) {
         return;
     }
+#endif
     
     while (!taskQueues[diskId].empty()) {
         taskQueues[diskId].pop();
@@ -251,30 +273,38 @@ void DiskHeadManager::clearTaskQueue(int diskId) {
 }
 
 int DiskHeadManager::getTaskQueueSize(int diskId) const {
+#ifndef NDEBUG
     if (diskId < 1 || diskId > diskCount) {
         return 0;
     }
+#endif
     return taskQueues[diskId].size();
 }
 
 bool DiskHeadManager::hasReadRequests(int diskId) const {
+#ifndef NDEBUG
     if (diskId < 1 || diskId > diskCount) {
         return false;
     }
+#endif
     return !diskReadUnits[diskId].empty();
 }
 
 int DiskHeadManager::getReadRequestCount(int diskId) const {
+#ifndef NDEBUG
     if (diskId < 1 || diskId > diskCount) {
         return 0;
     }
+#endif
     return diskReadUnits[diskId].size();
 }
 
 bool DiskHeadManager::needsRead(int diskId, int unitPosition) const {
+#ifndef NDEBUG
     if (diskId < 1 || diskId > diskCount || unitPosition < 1 || unitPosition > unitCount) {
         return false;
     }
+#endif
     
     const auto& readUnits = diskReadUnits[diskId];
     return readUnits.find(unitPosition) != readUnits.end();
@@ -287,9 +317,11 @@ void DiskHeadManager::printTaskQueues() const {
 }
 
 std::string DiskHeadManager::getTaskQueueString(int diskId) const {
+#ifndef NDEBUG
     if (diskId < 1 || diskId > diskCount) {
         return "";
     }
+#endif
     
     std::ostringstream output;
 
@@ -305,6 +337,7 @@ std::string DiskHeadManager::getTaskQueueString(int diskId) const {
     const HeadTask& firstTask = taskQueue.front();
     if (firstTask.actionType == ACTION_JUMP) {
         output << "j " << firstTask.targetUnit;
+        taskQueue.pop();
         return output.str();
     }
     
