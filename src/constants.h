@@ -10,4 +10,6 @@
 #define FRE_PER_SLICING (1800)
 #define EXTRA_TIME (105)
 
+extern int currentTimeSlice;
+
 #endif // CONSTANTS_H 

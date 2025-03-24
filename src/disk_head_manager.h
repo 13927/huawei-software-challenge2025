@@ -8,6 +8,7 @@
 #include <set>
 #include <cmath>
 #include <string>
+#include "disk_manager.h"
 #include "constants.h"
 
 // 磁头动作类型
@@ -31,10 +32,9 @@ struct HeadState {
     int currentPosition;        // 当前位置
     HeadActionType lastAction;  // 上一次动作类型
     int lastTokenCost;          // 上一次动作消耗的令牌数
-    bool actionInCurrentSlice;  // 当前时间片是否已执行过动作
     
     HeadState() : currentPosition(1), lastAction(ACTION_PASS), 
-                 lastTokenCost(0), actionInCurrentSlice(false) {}
+                 lastTokenCost(0){}
 };
 
 // 磁盘磁头管理器类
@@ -50,6 +50,9 @@ private:
     // 存储每个磁盘上需要读取的存储单元
     std::vector<std::set<int>> diskReadUnits;
     
+    // DiskManager引用
+    DiskManager& diskManager;
+    
     // 计算Read动作的令牌消耗
     int calculateReadTokenCost(int diskId);
     
@@ -62,8 +65,11 @@ private:
     // 计算到目标单元需要的Pass次数
     int calculatePassCount(int from, int to);
     
+    // 检查从currentPos到nextUnit的路径上是否可以使用readPlan
+    bool canUseReadPlanForPath(int diskId, int currentPos, int nextUnit);
+    
 public:
-    DiskHeadManager(int disks, int units, int maxTokens);
+    DiskHeadManager(int disks, int units, int maxTokens, DiskManager& dm);
 
     // 获取磁盘数量
     int getDiskCount() const { return diskCount; };

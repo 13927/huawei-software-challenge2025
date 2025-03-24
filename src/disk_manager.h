@@ -14,7 +14,10 @@
  * 磁盘管理器类，用于模拟对磁盘的操作
  * 
  * 管理N个磁盘，每个磁盘包含V个存储单元
- * 提供分配、回收和查询空闲空间的功能
+ * 存储单元状态:
+ * -1: 表示该存储单元空闲
+ * 0: 表示存储单元被分配但未被读取
+ * >=1: 表示该存储单元在时间片x下被读取
  */
 class DiskManager {
 public:
@@ -85,16 +88,42 @@ public:
      */
     int getUnitCount() const;
 
+    /**
+     * 检查指定磁盘上的特定单元是否为空闲状态
+     * 参数 diskId: 磁盘ID (1 <= diskId <= N)
+     * 参数 position: 存储单元位置 (1 <= position <= V)
+     * 返回值: 如果该单元为空闲状态则返回true，否则返回false
+     */
+    bool isBlockFree(int diskId, int position) const;
+    
+    /**
+     * 设置磁盘块在特定时间片被读取
+     * 参数 diskId: 磁盘ID (1 <= diskId <= N)
+     * 参数 position: 存储单元位置 (1 <= position <= V)
+     * 参数 timeSlice: 时间片编号 (>= 1)
+     * 返回值: 是否设置成功
+     */
+    bool setBlockRead(int diskId, int position, int timeSlice);
+    
+    /**
+     * 获取磁盘块的读取状态
+     * 参数 diskId: 磁盘ID (1 <= diskId <= N)
+     * 参数 position: 存储单元位置 (1 <= position <= V)
+     * 返回值: 块的读取状态，-1表示空闲，0表示已分配未读取，>0表示读取的时间片
+     */
+    int getBlockStatus(int diskId, int position) const;
+
 private:
     int n;  // 磁盘数量
     int v;  // 每个磁盘的存储单元数量
     
-    // 使用vector存储空闲空间块，每个pair表示<起始位置, 长度>
-    std::vector<std::vector<std::pair<int, int>>> freeSpaces;
+    // 使用二维数组存储单元状态
+    // diskUnits[i][j] 表示第i个磁盘的第j个单元的状态
+    // -1: 空闲, 0: 已分配未读取, >= 1: 在时间片x被读取
+    std::vector<std::vector<int>> diskUnits;
     
-    // 添加辅助方法来维护空闲空间列表
-    void insertFreeBlock(int diskId, int start, int length);
-    void mergeFreeBlocks(int diskId);
+    // 查找连续空闲单元
+    std::pair<int, int> findConsecutiveFreeUnits(int diskId, int size) const;
 };
 
 #endif // DISK_MANAGER_H 

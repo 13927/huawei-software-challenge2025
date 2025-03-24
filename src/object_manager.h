@@ -3,7 +3,7 @@
 
 // TODO: 
 // 1. allocateReplicas 需要修改
-// 2. deleteObject 未来要配合磁头任务
+// 2. deleteObject 未来可能要配合磁头任务
 // 3. 
 
 #include <vector>

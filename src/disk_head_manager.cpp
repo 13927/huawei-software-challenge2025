@@ -1,10 +1,11 @@
 #include "disk_head_manager.h"
+#include "disk_manager.h"
 #include <algorithm>
 #include <iostream>
 #include <sstream>
 
-DiskHeadManager::DiskHeadManager(int disks, int units, int maxTokens) 
-    : diskCount(disks), unitCount(units), maxTokensPerSlice(maxTokens) {
+DiskHeadManager::DiskHeadManager(int disks, int units, int maxTokens, DiskManager& dm) 
+    : diskCount(disks), unitCount(units), maxTokensPerSlice(maxTokens), diskManager(dm) {
     // 初始化每个磁盘的磁头状态和任务队列
     headStates.resize(disks + 1);  // 索引从1开始
     taskQueues.resize(disks + 1);
@@ -12,9 +13,6 @@ DiskHeadManager::DiskHeadManager(int disks, int units, int maxTokens)
 }
 
 void DiskHeadManager::resetTimeSlice() {
-    for (int diskId = 1; diskId <= diskCount; diskId++) {
-        headStates[diskId].actionInCurrentSlice = false;
-    }
     
     // 每个时间片开始时，重新为各个磁盘生成任务
     generateTasks();
@@ -137,6 +135,26 @@ void DiskHeadManager::generateTasksForDisk(int diskId) {
     int currentPos = headStates[diskId].currentPosition;
     int availableTokens = maxTokensPerSlice;
     
+    // 时间片开始时有足够的令牌可以执行JUMP操作，考虑JUMP
+    {
+        int nextUnit = findNextReadUnit(diskId, currentPos);
+        if (nextUnit != -1 && nextUnit != currentPos) {
+            int passCount = calculatePassCount(currentPos, nextUnit);
+            if (passCount + 64 > availableTokens) {
+                // 使用JUMP操作（只能在时间片开始时执行）
+                HeadTask jumpTask(ACTION_JUMP, nextUnit);
+                taskQueues[diskId].push(jumpTask);
+
+                currentPos = nextUnit;
+                headStates[diskId].lastAction = ACTION_JUMP;
+                headStates[diskId].lastTokenCost = maxTokensPerSlice;  
+                // JUMP执行后，该时间片不能再执行其他操作
+                headStates[diskId].currentPosition = currentPos;
+                return;
+            }
+        }
+    }
+    
     // 循环生成任务，直到没有更多需要读取的单元或无法生成有效任务
     while (!diskReadUnits[diskId].empty() && availableTokens > 0) {
         // 找到下一个需要读取的单元
@@ -160,52 +178,169 @@ void DiskHeadManager::generateTasksForDisk(int diskId) {
             // 添加读取任务
             HeadTask readTask(ACTION_READ, nextUnit);
             taskQueues[diskId].push(readTask);
+
+            // 设置磁盘块在当前时间片被读取
+            diskManager.setBlockRead(diskId, nextUnit, currentTimeSlice);
             
             // 更新可用令牌和当前位置
             availableTokens -= readCost;
-            
-            // 更新虚拟当前位置（为了生成后续任务）
-            currentPos = (currentPos % unitCount) + 1;
-            
             // 更新磁头状态
             headStates[diskId].lastAction = ACTION_READ;
-            headStates[diskId].lastTokenCost = readCost;    
+            headStates[diskId].lastTokenCost = readCost;
 
-            diskReadUnits[diskId].erase(nextUnit);       
+            diskReadUnits[diskId].erase(currentPos);  
+            currentPos = (currentPos % unitCount) + 1;     
             continue;
         }
         
         // 计算从当前位置到下一个需要读取的位置所需的PASS次数
         int passCount = calculatePassCount(currentPos, nextUnit);
         
-        if (availableTokens == maxTokensPerSlice && passCount + 64 > availableTokens) {
-            // 使用JUMP操作（只能在时间片开始时执行）
-            HeadTask jumpTask(ACTION_JUMP, nextUnit);
-            taskQueues[diskId].push(jumpTask);
+        // 计算两种移动方式的令牌消耗，并选择消耗更小的方式
+        if (headStates[diskId].lastAction == ACTION_READ && canUseReadPlanForPath(diskId, currentPos, nextUnit)) {
 
-            currentPos = nextUnit;
-            headStates[diskId].lastAction = ACTION_JUMP;
-            headStates[diskId].lastTokenCost = maxTokensPerSlice;  
-            // JUMP执行后，该时间片不能再执行其他操作
-            break;
-        } else {
-            // 使用PASS移动
+            // 方案1：使用PASS移动passCount次后再执行一次READ
+            int passCost = passCount;  // PASS移动的令牌消耗
             
-            // 尽可能多地执行PASS，但不超过到目标单元所需的PASS数
-            int executedPass = std::min(availableTokens, passCount);
-            
-            // 添加PASS任务
-            for (int i = 0; i < executedPass; i++) {
-                HeadTask passTask(ACTION_PASS);
-                taskQueues[diskId].push(passTask);
+            // 计算PASS方案的总损失，包括考虑令牌不足情况
+            int totalPassPlanCost = passCost + 64;
+            // 如果需要下一时间片，考虑额外损失
+            if (passCost < availableTokens && passCost + 64 > availableTokens) {
+                // 下一时间片的起始成本是64（首次READ的成本）
+                totalPassPlanCost = availableTokens + 64;
             }
             
-            // 更新可用令牌和虚拟当前位置
-            availableTokens -= executedPass;
-            currentPos = (currentPos + executedPass)% unitCount;
-            headStates[diskId].lastAction = ACTION_PASS;
-            headStates[diskId].lastTokenCost = 1;  
+            // 方案2：连续使用READ移动passCount+1次
+            int totalReadCost = 0;
+            int possibleReadSteps = 0; // 当前时间片可以完成的READ步数
+            int lastCost = headStates[diskId].lastTokenCost;
+            bool readNeedsNextSlice = false;
+            
+            // 模拟连续READ操作，计算可以完成的步数和总损失
+            int tempAvailableTokens = availableTokens;
+            for (int i = 0; i <= passCount; i++) {
+                int cost = std::max(16, (int)std::ceil(lastCost * 0.8));
+                
+                if (tempAvailableTokens >= cost) {
+                    totalReadCost += cost;
+                    tempAvailableTokens -= cost;
+                    lastCost = cost;
+                    possibleReadSteps++;
+                    if (totalReadCost > totalPassPlanCost) {
+                        break;
+                    }
+                } else {
+                    readNeedsNextSlice = true;
+                    break;
+                }
+            }
+            int totalReadPlanCost = totalReadCost;
+            // 如果READ方案需要下一时间片，计算额外损失
+            if (readNeedsNextSlice) {
+                // 下一时间片继续使用当前计算的lastCost递减，而不是重新从64开始
+                int remainingSteps = passCount + 1 - possibleReadSteps;
+                // 使用当前时间片最后一次READ操作的成本作为起点继续计算
+                int nextLastCost = lastCost;
+                int nextSliceCost = 0;
+                
+                for (int i = 0; i < remainingSteps; i++) {
+                    int stepCost = std::max(16, (int)std::ceil(nextLastCost * 0.8));
+                    nextSliceCost += stepCost;
+                    nextLastCost = stepCost;
+                }
+                totalReadPlanCost = availableTokens + nextSliceCost;
+            }
+            
+            // 比较总损失，选择最优方案
+            if (totalReadPlanCost < totalPassPlanCost) {
+                // 使用连续READ方案，但仅执行当前时间片可完成的部分
+                if (possibleReadSteps > 0) {
+                    for (int i = 0; i < possibleReadSteps; i++) {
+                        HeadTask readTask(ACTION_READ, currentPos);
+                        taskQueues[diskId].push(readTask);
+                        
+                        // 设置磁盘块在当前时间片被读取
+                        diskManager.setBlockRead(diskId, currentPos, currentTimeSlice);
+                        diskReadUnits[diskId].erase(currentPos);
+                        currentPos = (currentPos % unitCount) + 1;
+                        
+                    }
+                    availableTokens -= totalReadCost;
+                    headStates[diskId].lastTokenCost = lastCost;
+                    headStates[diskId].lastAction = ACTION_READ;
+
+                    if (readNeedsNextSlice) {
+                        break;
+                    }
+                }
+                else {
+                    break;
+                }
+
+                // int tempPos = currentPos;
+                // lastCost = headStates[diskId].lastTokenCost;
+                
+                // // 执行当前时间片可完成的READ步骤
+                // for (int i = 0;  i < passCount + 1; i++) {
+                //     // 计算当前READ的令牌消耗
+                //     int cost = std::max(16, (int)std::ceil(lastCost * 0.8));
+                    
+                //     // 如果已无足够令牌，退出循环
+                //     if (cost > availableTokens) {
+                //         break;
+                //     }
+                    
+                //     // 添加READ任务
+                //     HeadTask readTask(ACTION_READ, tempPos);
+                //     taskQueues[diskId].push(readTask);
+                    
+                //     // 设置磁盘块在当前时间片被读取
+                //     diskManager.setBlockRead(diskId, tempPos, currentTimeSlice);
+                    
+                //     // 更新可用令牌和上次消耗
+                //     availableTokens -= cost;
+                //     lastCost = cost;
+                    
+                //     // 更新磁头状态
+                //     headStates[diskId].lastAction = ACTION_READ;
+                //     headStates[diskId].lastTokenCost = cost;
+                //     headStates[diskId].currentPosition = tempPos;
+                    
+                //     // 如果当前位置是目标位置，从读取请求中移除
+                //     if (tempPos == nextUnit) {
+                //         diskReadUnits[diskId].erase(nextUnit);
+                //     }
+                //     tempPos = (tempPos % unitCount) + 1;
+                // }
+                
+                // // 更新当前位置
+                // currentPos = tempPos;
+                // if (readNeedsNextSlice) {
+                //     break;
+                // }                
+                continue;
+            }
         }
+        
+        // 如果不使用READ移动或者READ移动不划算，则使用PASS移动
+        // 尽可能多地执行PASS，但不超过到目标单元所需的PASS数
+        int executedPass = std::min(availableTokens, passCount);
+        
+        // 添加PASS任务
+        for (int i = 0; i < executedPass; i++) {
+            HeadTask passTask(ACTION_PASS);
+            taskQueues[diskId].push(passTask);
+        }
+        
+        // 更新可用令牌和虚拟当前位置
+        availableTokens -= executedPass;
+        currentPos = (currentPos + executedPass) % unitCount;
+        if (currentPos == 0) {
+            currentPos = unitCount; // 修正为正确的单元位置，环形结构中0对应unitCount
+        }
+        headStates[diskId].lastAction = ACTION_PASS;
+        headStates[diskId].lastTokenCost = 1;
+        headStates[diskId].currentPosition = currentPos;
     }
     
     headStates[diskId].currentPosition = currentPos;
@@ -384,4 +519,27 @@ std::unordered_map<int, std::vector<int>> DiskHeadManager::executeTasks() {
     }
     
     return readUnitsInThisSlice;
+}
+
+
+bool DiskHeadManager::canUseReadPlanForPath(int diskId, int currentPos, int nextUnit) {
+    int tempPos = currentPos;
+    
+    // 检查当前位置的磁盘块是否为空闲
+    if (diskManager.getBlockStatus(diskId, tempPos) == -1) {
+        return false;
+    }
+    
+    // 计算从currentPos到nextUnit的路径
+    while (tempPos != nextUnit) {
+        tempPos = (tempPos % unitCount) + 1;  // 移动到下一个位置
+        
+        // 如果路径上有空闲块，不能使用readPlan
+        if (diskManager.getBlockStatus(diskId, tempPos) == -1) {
+            return false;
+        }
+    }
+
+    // 所有块都不是空闲的，可以使用readPlan
+    return true;
 }

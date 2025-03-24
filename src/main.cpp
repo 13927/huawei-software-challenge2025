@@ -3,6 +3,7 @@
 #include <vector>
 #include <memory>
 #include <iostream>
+#include <fstream>
 #include <string>
 #include "disk_manager.h"
 #include "object_manager.h"
@@ -33,6 +34,7 @@ struct FrequencyData {
 // 全局变量
 int T, M, N, V, G; // 总时间片数、标签数、磁盘数、每个磁盘的存储单元数、每个磁头每个时间片最多消耗的令牌数
 FrequencyData freqData; // 频率数据
+int currentTimeSlice = 0;
 
 // 全局预处理函数
 void globalPreprocessing() {
@@ -76,6 +78,7 @@ void timestamp_action()
     int timestamp;
     std::string dummy;
     std::cin >> dummy >> timestamp;
+    currentTimeSlice = timestamp;
     std::cout << "TIMESTAMP " << timestamp << std::endl;
     std::cout.flush();
 }
@@ -158,7 +161,15 @@ void handle_delete_events(ReadRequestManager& requestManager) {
         
         // 调用ReadRequestManager取消与对象相关的所有请求
         std::vector<int> cancelledReqs = requestManager.cancelRequestsByObjectId(obj_id);
-        
+        // 打印取消的请求ID到文件
+        #ifndef NDEBUG
+        std::ofstream logFile("cancelledReqs.txt", std::ios::app);
+        if (logFile.is_open()) {
+            for (int req_id : cancelledReqs) {
+                logFile << req_id << std::endl;
+            }
+        }
+        #endif
         // 将取消的请求ID添加到总列表中
         abortedRequests.insert(abortedRequests.end(), cancelledReqs.begin(), cancelledReqs.end());
     }
@@ -208,7 +219,7 @@ int main() {
     ObjectManager objectManager(diskManager);
     
     // 创建磁盘磁头管理器
-    DiskHeadManager diskHeadManager(N, V, G);
+    DiskHeadManager diskHeadManager(N, V, G, diskManager);
     
     // 创建读取请求管理器
     ReadRequestManager readRequestManager(objectManager, diskHeadManager);

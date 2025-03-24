@@ -13,6 +13,8 @@ aux_source_directory(./src                  src_dir) # 增加 src 目录
 # 直接设置 CMAKE_CXX_FLAGS 和 CMAKE_C_FLAGS，开启最高优化
 set(CMAKE_CXX_FLAGS "-O3 -march=native -DNDEBUG")
 set(CMAKE_C_FLAGS "-O3 -march=native -DNDEBUG")
+# set(CMAKE_CXX_FLAGS "-O3 -march=native")
+# set(CMAKE_C_FLAGS "-O3 -march=native")
 
 add_executable(code_craft                   ${cur_src} ${src_dir}) # 不要修改 code_craft 名称
 

@@ -168,7 +168,7 @@ void ReadRequestManager::updateAllRequestsStatus(const std::unordered_map<int, s
                                 
                                 // 从剩余单元中移除已读取的单元
                                 auto& diskUnits = request.remainingUnits[diskId];
-                                if (diskUnits.erase(unitPos) > 0) {
+                                if (diskUnits.erase(unitPos) == 1) {
                                     request.totalRemainingUnits--;
                                     
                                     // 检查请求是否已完成
