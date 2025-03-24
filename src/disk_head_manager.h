@@ -65,9 +65,6 @@ private:
     // 计算到目标单元需要的Pass次数
     int calculatePassCount(int from, int to);
     
-    // 检查从currentPos到nextUnit的路径上是否可以使用readPlan
-    bool canUseReadPlanForPath(int diskId, int currentPos, int nextUnit);
-    
 public:
     DiskHeadManager(int disks, int units, int maxTokens, DiskManager& dm);
 

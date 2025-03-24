@@ -197,7 +197,7 @@ void DiskHeadManager::generateTasksForDisk(int diskId) {
         int passCount = calculatePassCount(currentPos, nextUnit);
         
         // 计算两种移动方式的令牌消耗，并选择消耗更小的方式
-        if (headStates[diskId].lastAction == ACTION_READ && canUseReadPlanForPath(diskId, currentPos, nextUnit)) {
+        if (headStates[diskId].lastAction == ACTION_READ) {
 
             // 方案1：使用PASS移动passCount次后再执行一次READ
             int passCost = passCount;  // PASS移动的令牌消耗
@@ -519,27 +519,4 @@ std::unordered_map<int, std::vector<int>> DiskHeadManager::executeTasks() {
     }
     
     return readUnitsInThisSlice;
-}
-
-
-bool DiskHeadManager::canUseReadPlanForPath(int diskId, int currentPos, int nextUnit) {
-    int tempPos = currentPos;
-    
-    // 检查当前位置的磁盘块是否为空闲
-    if (diskManager.getBlockStatus(diskId, tempPos) == -1) {
-        return false;
-    }
-    
-    // 计算从currentPos到nextUnit的路径
-    while (tempPos != nextUnit) {
-        tempPos = (tempPos % unitCount) + 1;  // 移动到下一个位置
-        
-        // 如果路径上有空闲块，不能使用readPlan
-        if (diskManager.getBlockStatus(diskId, tempPos) == -1) {
-            return false;
-        }
-    }
-
-    // 所有块都不是空闲的，可以使用readPlan
-    return true;
 }
