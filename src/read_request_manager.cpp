@@ -1,6 +1,7 @@
 #include "read_request_manager.h"
 #include <iostream>
-#include <random>
+#include <climits> // 用于INT_MAX
+#include "constants.h" // 用于REP_NUM
 
 ReadRequestManager::ReadRequestManager(ObjectManager& objMgr, DiskHeadManager& diskMgr)
     : objectManager(objMgr), diskHeadManager(diskMgr) {
@@ -56,32 +57,66 @@ bool ReadRequestManager::allocateReadRequests() {
         pendingRequests.pop_back();
         
         auto requestIt = requests.find(requestId);
-// #ifndef NDEBUG
+#ifndef NDEBUG
         if (requestIt == requests.end()) {
             continue; // 跳过不存在的请求
         }
-// #endif
+#endif
         
         ReadRequest& request = requestIt->second;
         
         // 获取对象信息
         auto obj = objectManager.getObject(request.objectId);
-// #ifndef NDEBUG
+#ifndef NDEBUG
         if (!obj) {
             // 对象已不存在，移除此请求
             requests.erase(requestId);
             continue;
         }
-// #endif
+#endif
         
         // 初始化请求的磁盘单元信息
         if (request.remainingUnits.empty()) {
-            // 随机选一个副本，待优化
-            std::default_random_engine engine(std::random_device{}());
-            std::uniform_int_distribution<int> dist(0, 2);
-            int random_number = dist(engine);
+            // 找到离磁头最近的副本
+            int closestReplicaIndex = -1;
+            int closestDistance = INT_MAX;
             
-            const StorageUnit& unit = obj->getReplica(random_number);
+            // 检查每个副本
+            for (int replicaIndex = 0; replicaIndex < REP_NUM; replicaIndex++) {
+                const StorageUnit& replica = obj->getReplica(replicaIndex);
+                int diskId = replica.diskId;
+                
+                // 获取该磁盘的磁头位置
+                int headPosition = diskHeadManager.getHeadPosition(diskId);
+                
+                // 计算该副本的首个存储单元到磁头的最小距离
+                int minDistance = INT_MAX;
+                for (const auto& blockPair : replica.blockLists) {
+                    int startPos = blockPair.first;
+                    
+                    // 计算距离（考虑环形结构）
+                    int distance = (startPos - headPosition)>0 ? (startPos - headPosition) : (diskHeadManager.getDiskManager().getUnitCount() - headPosition + startPos);
+                    int diskSize = diskHeadManager.getDiskManager().getUnitCount();
+                    int alternativeDistance = diskSize - distance;
+                    int finalDistance = std::min(distance, alternativeDistance);
+                    
+                    minDistance = std::min(minDistance, finalDistance);
+                }
+                
+                // 如果此副本距离更近，更新最近副本索引
+                if (minDistance < closestDistance) {
+                    closestDistance = minDistance;
+                    closestReplicaIndex = replicaIndex;
+                }
+            }
+            
+            // 如果找不到有效副本，使用第一个副本（不应该发生）
+            if (closestReplicaIndex == -1) {
+                closestReplicaIndex = 0;
+            }
+            
+            // 使用最近的副本
+            const StorageUnit& unit = obj->getReplica(closestReplicaIndex);
             int diskId = unit.diskId;
             
             if (request.remainingUnits.find(diskId) == request.remainingUnits.end()) {

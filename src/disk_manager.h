@@ -4,6 +4,8 @@
 #include <vector>
 #include <utility>
 #include <cstddef>
+#include <set>
+// #include <functional>
 
 // TODO: 
 // 1. 磁盘分配算法可以修改
@@ -42,24 +44,6 @@ public:
      *        如果分配失败则返回空向量
      */
     std::vector<std::pair<int, int>> allocateOnDisk(int diskId, int size);
-
-    /**
-     * 在指定磁盘的指定位置分配存储单元
-     * 参数 diskId: 磁盘ID (1 <= diskId <= N)
-     * 参数 position: 指定的起始位置 (1 <= position <= V)
-     * 参数 size: 需要分配的存储单元数量
-     * 返回值: 分配的存储单元块列表，每个pair表示<起始位置, 长度>
-     *        如果指定位置没有足够空间则返回空向量
-     */
-    std::vector<std::pair<int, int>> allocateOnDiskAtPosition(int diskId, int position, int size);
-
-    /**
-     * 在任意磁盘上分配存储单元
-     * 参数 size: 需要分配的存储单元数量
-     * 参数 diskId: 如果分配成功，返回分配到的磁盘ID
-     * 返回值: 分配的存储单元块列表，每个pair表示<起始位置, 长度>，如果分配失败则返回空向量
-     */
-    std::vector<std::pair<int, int>> allocate(int size, int& diskId);
 
     /**
      * 释放指定磁盘上的存储单元
@@ -113,6 +97,20 @@ public:
      */
     int getBlockStatus(int diskId, int position) const;
 
+    /**
+     * 获取负载最小的N个磁盘ID
+     * 参数 count: 要获取的磁盘数量
+     * 返回值: 负载最小的N个磁盘ID列表
+     */
+    std::vector<int> getLeastLoadedDisks(int count) const;
+
+    /**
+     * 获取指定磁盘的负载情况（已分配单元数量）
+     * 参数 diskId: 磁盘ID (1 <= diskId <= N)
+     * 返回值: 已分配单元数量
+     */
+    int getDiskLoad(int diskId) const;
+
 private:
     int n;  // 磁盘数量
     int v;  // 每个磁盘的存储单元数量
@@ -121,6 +119,12 @@ private:
     // diskUnits[i][j] 表示第i个磁盘的第j个单元的状态
     // -1: 空闲, 0: 已分配未读取, >= 1: 在时间片x被读取
     std::vector<std::vector<int>> diskUnits;
+    
+    // 每个磁盘的空闲块数量
+    std::vector<int> diskFreeSpaces;
+    
+    // 更新磁盘负载信息
+    void updateDiskLoadInfo();
     
     // 查找连续空闲单元
     std::pair<int, int> findConsecutiveFreeUnits(int diskId, int size) const;

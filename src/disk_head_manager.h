@@ -118,6 +118,12 @@ public:
 
     // 执行任务并返回本时间片读取的存储单元 <diskId, [读取的存储单元]>
     std::unordered_map<int, std::vector<int>> executeTasks();
+
+    // 获取磁盘单元数
+    int getUnitCount() const { return unitCount; }
+    
+    // 获取DiskManager引用
+    const DiskManager& getDiskManager() const { return diskManager; }
 };
 
 #endif // DISK_HEAD_MANAGER_H 

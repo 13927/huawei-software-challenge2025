@@ -2,10 +2,13 @@
 #include <cstdlib>
 #include <cassert>
 #include <cstring>
+#include <algorithm>
 
 DiskManager::DiskManager(int diskNum, int unitNum) : n(diskNum), v(unitNum) {
     // 初始化数组，索引从1开始，所以分配0号位置作为哨兵
     diskUnits.resize(n + 1);
+    diskFreeSpaces.resize(n + 1, unitNum); // 初始化每个磁盘的空闲空间为unitNum
+    
     for (int i = 1; i <= n; i++) {
         diskUnits[i].resize(v + 1, -1);  // 初始时所有单元都是空闲的(-1)
     }
@@ -63,6 +66,9 @@ std::vector<std::pair<int, int>> DiskManager::allocateOnDisk(int diskId, int siz
             diskUnits[diskId][i] = 0;  // 设为已分配但未读取
         }
         
+        // 更新磁盘空闲空间信息
+        diskFreeSpaces[diskId] -= size;
+        
         // 创建并返回分配的块
         std::vector<std::pair<int, int>> result;
         result.push_back({startPos, size});
@@ -92,6 +98,8 @@ std::vector<std::pair<int, int>> DiskManager::allocateOnDisk(int diskId, int siz
         }
         
         if (remaining <= 0) {
+            // 更新磁盘空闲空间信息
+            diskFreeSpaces[diskId] -= size;
             return result;  // 成功分配所有需要的空间
         } else {
             // 分配失败，恢复已分配的单元
@@ -105,62 +113,14 @@ std::vector<std::pair<int, int>> DiskManager::allocateOnDisk(int diskId, int siz
     }
 }
 
-std::vector<std::pair<int, int>> DiskManager::allocateOnDiskAtPosition(int diskId, int position, int size) {
-#ifndef NDEBUG
-    if (diskId < 1 || diskId > n || position < 1 || position > v || 
-        size <= 0 || position + size - 1 > v) {
-        return {}; // 参数错误，返回空向量
-    }
-#endif
-    
-    // 检查指定位置的单元是否都是空闲的
-    for (int i = position; i < position + size; i++) {
-        if (diskUnits[diskId][i] != -1) {
-            return {};  // 有非空闲单元，分配失败
-        }
-    }
-    
-    // 分配指定位置的单元
-    for (int i = position; i < position + size; i++) {
-        diskUnits[diskId][i] = 0;  // 设为已分配但未读取
-    }
-    
-    // 返回分配结果
-    std::vector<std::pair<int, int>> result;
-    result.push_back({position, size});
-    return result;
-}
-
-std::vector<std::pair<int, int>> DiskManager::allocate(int size, int& diskId) {
-#ifndef NDEBUG
-    if (size <= 0 || size > v) {
-        diskId = -1;
-        return {}; // 参数错误，返回空向量
-    }
-#endif
-    
-    // 先查找有足够空闲空间的磁盘
-    for (int i = 1; i <= n; i++) {
-        if (getFreeSpaceOnDisk(i) >= size) {
-            auto result = allocateOnDisk(i, size);
-            if (!result.empty()) {
-                diskId = i;
-                return result;
-            }
-        }
-    }
-    
-    // 没有找到合适的磁盘
-    diskId = -1;
-    return {};
-}
-
 bool DiskManager::freeOnDisk(int diskId, const std::vector<std::pair<int, int>>& blocks) {
 #ifndef NDEBUG
     if (diskId < 1 || diskId > n || blocks.empty()) {
         return false; // 参数错误
     }
 #endif
+    
+    int freedUnits = 0;
     
     // 释放指定的块
     for (const auto& block : blocks) {
@@ -175,9 +135,15 @@ bool DiskManager::freeOnDisk(int diskId, const std::vector<std::pair<int, int>>&
         
         // 将块中的所有单元设为空闲
         for (int i = start; i < start + length; i++) {
-            diskUnits[diskId][i] = -1;  // 设为空闲
+            if (diskUnits[diskId][i] != -1) {
+                diskUnits[diskId][i] = -1;  // 设为空闲
+                freedUnits++;
+            }
         }
     }
+    
+    // 更新磁盘空闲空间信息
+    diskFreeSpaces[diskId] += freedUnits;
     
     return true;
 }
@@ -189,15 +155,7 @@ int DiskManager::getFreeSpaceOnDisk(int diskId) const {
     }
 #endif
     
-    // 计算空闲单元数量
-    int freeCount = 0;
-    for (int i = 1; i <= v; i++) {
-        if (diskUnits[diskId][i] == -1) {
-            freeCount++;
-        }
-    }
-    
-    return freeCount;
+    return diskFreeSpaces[diskId];
 }
 
 int DiskManager::getDiskCount() const {
@@ -242,4 +200,44 @@ int DiskManager::getBlockStatus(int diskId, int position) const {
 #endif
     
     return diskUnits[diskId][position];
+}
+
+void DiskManager::updateDiskLoadInfo() {
+    // 重新计算每个磁盘的空闲空间
+    for (int i = 1; i <= n; i++) {
+        int freeCount = 0;
+        for (int j = 1; j <= v; j++) {
+            if (diskUnits[i][j] == -1) {
+                freeCount++;
+            }
+        }
+        diskFreeSpaces[i] = freeCount;
+    }
+}
+
+std::vector<int> DiskManager::getLeastLoadedDisks(int count) const {
+    // 创建包含所有磁盘ID的向量
+    std::vector<int> allDisks;
+    for (int i = 1; i <= n; i++) {
+        allDisks.push_back(i);
+    }
+    
+    // 按照空闲空间从大到小排序（负载从小到大）
+    std::sort(allDisks.begin(), allDisks.end(), [this](int a, int b) {
+        return diskFreeSpaces[a] > diskFreeSpaces[b];
+    });
+    
+    // 返回前count个磁盘ID，或者全部（如果磁盘总数小于count）
+    int resultSize = std::min(count, static_cast<int>(allDisks.size()));
+    return std::vector<int>(allDisks.begin(), allDisks.begin() + resultSize);
+}
+
+int DiskManager::getDiskLoad(int diskId) const {
+#ifndef NDEBUG
+    if (diskId < 1 || diskId > n) {
+        return 0; // 参数错误
+    }
+#endif
+    
+    return v - diskFreeSpaces[diskId];
 } 
