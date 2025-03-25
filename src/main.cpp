@@ -5,44 +5,30 @@
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <utility>
+#include <iomanip>
 #include "disk_manager.h"
 #include "object_manager.h"
 #include "disk_head_manager.h"
 #include "read_request_manager.h"
 #include "constants.h"
-
-// 存储频率数据的结构
-struct FrequencyData {
-    std::vector<std::vector<int>> fre_del;  // 删除操作频率
-    std::vector<std::vector<int>> fre_write; // 写入操作频率
-    std::vector<std::vector<int>> fre_read;  // 读取操作频率
-    
-    // 初始化频率数据结构
-    void initialize(int m, int sliceCount) {
-        fre_del.resize(m + 1);
-        fre_write.resize(m + 1);
-        fre_read.resize(m + 1);
-        
-        for (int i = 1; i <= m; i++) {
-            fre_del[i].resize(sliceCount + 1, 0);
-            fre_write[i].resize(sliceCount + 1, 0);
-            fre_read[i].resize(sliceCount + 1, 0);
-        }
-    }
-};
+#include "frequency_data.h"
 
 // 全局变量
 int T, M, N, V, G; // 总时间片数、标签数、磁盘数、每个磁盘的存储单元数、每个磁头每个时间片最多消耗的令牌数
 FrequencyData freqData; // 频率数据
 int currentTimeSlice = 0;
 
-// 全局预处理函数
-void globalPreprocessing() {
+// 读取系统参数
+void readSystemParameters() {
     // 读取基本参数
     std::cin >> T >> M >> N >> V >> G;
     
     // 计算分片数量
     int sliceCount = (T - 1) / FRE_PER_SLICING + 1;
+    
+    // 设置系统参数
+    freqData.setSystemParameters(T, N, V, G);
     
     // 初始化频率数据结构
     freqData.initialize(M, sliceCount);
@@ -50,27 +36,106 @@ void globalPreprocessing() {
     // 读取删除操作频率
     for (int i = 1; i <= M; i++) {
         for (int j = 1; j <= sliceCount; j++) {
-            std::cin >> freqData.fre_del[i][j];
+            std::cin >> freqData.getDeleteFrequency()[i][j];
         }
     }
     
     // 读取写入操作频率
     for (int i = 1; i <= M; i++) {
         for (int j = 1; j <= sliceCount; j++) {
-            std::cin >> freqData.fre_write[i][j];
+            std::cin >> freqData.getWriteFrequency()[i][j];
         }
     }
     
     // 读取读取操作频率
     for (int i = 1; i <= M; i++) {
         for (int j = 1; j <= sliceCount; j++) {
-            std::cin >> freqData.fre_read[i][j];
+            std::cin >> freqData.getReadFrequency()[i][j];
         }
     }
-    
-    // 输出OK表示预处理完成
+
     std::cout << "OK" << std::endl;
     std::cout.flush();
+}
+
+// 全局预处理函数
+void globalPreprocessing() {
+    // 分析数据并预分配空间
+    freqData.analyzeAndPreallocate();
+
+    #ifndef NDEBUG
+    // 输出磁盘分配结果
+    std::ofstream outFile("allocation_result.txt");
+    if (outFile.is_open()) {
+        outFile << "=== 磁盘预分配结果 ===\n\n";
+        
+        // 输出所有标签的分配情况
+        outFile << "标签分配情况:\n";
+        outFile << "标签ID\t分配磁盘数\t总分配单元数\t分配详情\n";
+        for (int tag = 1; tag <= M; tag++) {
+            int diskCount = freqData.getTagDiskCount(tag);
+            int totalUnits = freqData.getTagTotalAllocatedUnits(tag);
+            auto allocation = freqData.getTagAllocation(tag);
+            
+            outFile << tag << "\t" << diskCount << "\t" << totalUnits << "\t";
+            
+            if (!allocation.empty()) {
+                outFile << "分配到: ";
+                for (size_t i = 0; i < allocation.size(); i++) {
+                    auto [diskId, startUnit, endUnit] = allocation[i];
+                    outFile << "磁盘" << diskId << "[" << startUnit << "-" << endUnit << "]";
+                    if (i < allocation.size() - 1) {
+                        outFile << ", ";
+                    }
+                }
+            } else {
+                outFile << "无分配";
+            }
+            outFile << "\n";
+        }
+        outFile << "\n";
+        
+        // 输出所有磁盘的分配情况
+        outFile << "磁盘分配情况:\n";
+        outFile << "磁盘ID\t分配区间数\t区间详情\n";
+        for (int disk = 1; disk <= N; disk++) {
+            auto diskAlloc = freqData.getDiskAllocation(disk);
+            
+            outFile << disk << "\t" << diskAlloc.size() << "\t";
+            
+            if (!diskAlloc.empty()) {
+                for (size_t i = 0; i < diskAlloc.size(); i++) {
+                    auto [startUnit, endUnit, tag] = diskAlloc[i];
+                    outFile << "[" << startUnit << "-" << endUnit << "]:标签" << tag;
+                    if (i < diskAlloc.size() - 1) {
+                        outFile << ", ";
+                    }
+                }
+            } else {
+                outFile << "无分配";
+            }
+            outFile << "\n";
+        }
+        
+        // 输出分配统计信息
+        outFile << "\n=== 分配统计 ===\n";
+        int totalAllocatedUnits = 0;
+        for (int tag = 1; tag <= M; tag++) {
+            totalAllocatedUnits += freqData.getTagTotalAllocatedUnits(tag);
+        }
+        int totalCapacity = N * V;
+        double usagePercent = (double)totalAllocatedUnits / totalCapacity * 100;
+        
+        outFile << "总容量: " << totalCapacity << " 单元\n";
+        outFile << "已分配: " << totalAllocatedUnits << " 单元\n";
+        outFile << "使用率: " << std::fixed << std::setprecision(2) << usagePercent << "%\n";
+        
+        outFile.close();
+        
+
+    }
+    
+    #endif
 }
 
 void timestamp_action()
@@ -209,14 +274,17 @@ void handle_read_events(ReadRequestManager& requestManager) {
 }
 
 int main() {
-    // 全局预处理
-    globalPreprocessing();
+    // 读取系统参数
+    readSystemParameters();
     
     // 创建磁盘管理器
     DiskManager diskManager(N, V);
     
     // 创建对象管理器
     ObjectManager objectManager(diskManager);
+    
+    // 全局预处理
+    globalPreprocessing();
     
     // 创建磁盘磁头管理器
     DiskHeadManager diskHeadManager(N, V, G, diskManager);
