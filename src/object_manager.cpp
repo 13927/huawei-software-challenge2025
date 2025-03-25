@@ -54,6 +54,15 @@ bool ObjectManager::createObject(int id, int size, int tag) {
     
     // 添加到对象映射中
     objects[id] = newObject;
+    
+    // 更新磁盘块到对象的映射
+    for (int i = 0; i < REP_NUM; i++) {
+        const StorageUnit& replica = newObject.getReplica(i);
+        if (replica.diskId > 0) {
+            updateBlockToObjectMapping(id, replica.diskId, replica.blockLists, true);
+        }
+    }
+    
     return true;
 }
 
@@ -119,10 +128,13 @@ bool ObjectManager::deleteObject(int id) {
     // 获取对象
     Object& obj = it->second;
     
-    // 释放所有副本的磁盘空间
+    // 释放所有副本的磁盘空间并更新映射
     for (int i = 0; i < REP_NUM; i++) {
         const StorageUnit& replica = obj.getReplica(i);
         if (replica.diskId > 0) {
+            // 从映射中删除
+            updateBlockToObjectMapping(id, replica.diskId, replica.blockLists, false);
+            // 释放磁盘空间
             diskManager.freeOnDisk(replica.diskId, replica.blockLists);
         }
     }
@@ -151,4 +163,71 @@ std::shared_ptr<const Object> ObjectManager::getObject(int id) const {
 bool ObjectManager::objectExists(int id) const {
     auto it = objects.find(id);
     return (it != objects.end());
+}
+
+// 更新磁盘块到对象ID的映射
+void ObjectManager::updateBlockToObjectMapping(int objectId, int diskId, const std::vector<std::pair<int, int>>& blocks, bool isAdd) {
+#ifndef NDEBUG
+    if (diskId <= 0 || diskId >= diskBlockToObjectMap.size()) {
+        return; // 无效的磁盘ID
+    }
+#endif
+    
+    // 对每个块进行处理
+    for (const auto& block : blocks) {
+        int startPos = block.first;
+        int length = block.second;
+        
+        // 更新每个位置的映射
+        for (int pos = startPos; pos < startPos + length; pos++) {
+            if (isAdd) {
+                // 添加映射
+                diskBlockToObjectMap[diskId][pos] = objectId;
+            } else {
+                // 移除映射
+                diskBlockToObjectMap[diskId].erase(pos);
+            }
+        }
+    }
+}
+
+// 根据磁盘ID和块位置获取对象ID
+int ObjectManager::getObjectIdByDiskBlock(int diskId, int blockPosition) const {
+#ifndef NDEBUG
+    if (diskId <= 0 || diskId >= diskBlockToObjectMap.size()) {
+        return -1; // 无效的磁盘ID
+    }
+#endif
+    
+    auto& diskMap = diskBlockToObjectMap[diskId];
+    auto it = diskMap.find(blockPosition);
+    
+    if (it != diskMap.end()) {
+        return it->second; // 返回对象ID
+    }
+    
+    return -1; // 没有找到映射的对象ID
+}
+
+// 获取指定磁盘上的所有对象ID
+std::vector<int> ObjectManager::getObjectsOnDisk(int diskId) const {
+#ifndef NDEBUG
+    if (diskId <= 0 || diskId >= diskBlockToObjectMap.size()) {
+        return {}; // 无效的磁盘ID，返回空向量
+    }
+#endif
+    
+    std::vector<int> result;
+    std::unordered_map<int, bool> uniqueIds; // 用于去重
+    
+    const auto& diskMap = diskBlockToObjectMap[diskId];
+    for (const auto& pair : diskMap) {
+        int objectId = pair.second;
+        if (!uniqueIds[objectId]) {
+            uniqueIds[objectId] = true;
+            result.push_back(objectId);
+        }
+    }
+    
+    return result;
 } 

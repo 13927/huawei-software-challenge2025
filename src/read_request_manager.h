@@ -46,17 +46,7 @@ private:
     
     // 对象ID到请求ID的映射，用于快速找到与对象相关的读取请求
     std::unordered_map<int, std::unordered_set<int>> objectToRequests;
-    
-    // 磁盘块到读取请求的映射，用于高效更新请求状态
-    // 磁盘ID -> (单元位置 -> 请求ID集合)
-    std::unordered_map<int, std::unordered_map<int, std::unordered_set<int>>> blockToRequests;
-    
-    // 用于负载均衡的磁盘计数器
-    // std::vector<int> diskLoadCounter;
 
-    // 获取负载最小的磁盘
-    int getLeastLoadedDisk(const std::vector<int>& availableDisks);
-    
 public:
     ReadRequestManager(ObjectManager& objMgr, DiskHeadManager& diskMgr);
     
@@ -87,11 +77,6 @@ public:
     int getCompletedRequestCount() const;
     int getPendingRequestCount() const;
     
-    // 注册块到请求的映射关系
-    void registerBlockToRequest(int diskId, int unitPos, int requestId);
-    
-    // 取消块到请求的映射关系
-    void unregisterBlockToRequest(int diskId, int unitPos, int requestId);
 };
 
 #endif // READ_REQUEST_MANAGER_H 

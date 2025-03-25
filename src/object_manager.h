@@ -50,12 +50,22 @@ class ObjectManager {
 private:
     std::unordered_map<int, Object> objects;  // 对象ID到对象的映射
     DiskManager& diskManager;                 // 磁盘管理器引用
+    
+    // 从磁盘存储单元到对象ID的映射
+    // 索引为磁盘ID，unordered_map的键为存储单元位置，值为对象ID
+    std::vector<std::unordered_map<int, int>> diskBlockToObjectMap;
 
     // 为对象分配副本存储位置
     bool allocateReplicas(Object& obj);
+    
+    // 更新磁盘块到对象ID的映射
+    void updateBlockToObjectMapping(int objectId, int diskId, const std::vector<std::pair<int, int>>& blocks, bool isAdd);
 
 public:
-    ObjectManager(DiskManager& dm) : diskManager(dm) {}
+    ObjectManager(DiskManager& dm) : diskManager(dm) {
+        // 初始化映射向量，大小为磁盘数量+1（因为磁盘ID从1开始）
+        diskBlockToObjectMap.resize(diskManager.getDiskCount() + 1);
+    }
     
     // 创建新对象
     bool createObject(int id, int size, int tag);
@@ -68,6 +78,12 @@ public:
     
     // 检查对象是否存在
     bool objectExists(int id) const;
+    
+    // 根据磁盘ID和块位置获取对象ID
+    int getObjectIdByDiskBlock(int diskId, int blockPosition) const;
+    
+    // 获取指定磁盘上的所有对象ID
+    std::vector<int> getObjectsOnDisk(int diskId) const;
 };
 
 #endif // OBJECT_MANAGER_H 

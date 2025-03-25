@@ -132,8 +132,6 @@ bool ReadRequestManager::allocateReadRequests() {
                     int unitPos = startPos + j;
                     request.remainingUnits[diskId].insert(unitPos);
                     
-                    // 注册块到请求的映射关系
-                    registerBlockToRequest(diskId, unitPos, requestId);
                 }
             }
         }
@@ -156,73 +154,40 @@ bool ReadRequestManager::allocateReadRequests() {
     return true;
 }
 
-void ReadRequestManager::registerBlockToRequest(int diskId, int unitPos, int requestId) {
-    blockToRequests[diskId][unitPos].insert(requestId);
-}
-
-void ReadRequestManager::unregisterBlockToRequest(int diskId, int unitPos, int requestId) {
-    auto diskIt = blockToRequests.find(diskId);
-    if (diskIt != blockToRequests.end()) {
-        auto unitIt = diskIt->second.find(unitPos);
-        if (unitIt != diskIt->second.end()) {
-            unitIt->second.erase(requestId);
-            
-            // 如果该单元没有关联的请求了，删除它
-            if (unitIt->second.empty()) {
-                diskIt->second.erase(unitPos);
-                
-                // 如果该磁盘没有关联的单元了，删除它
-                if (diskIt->second.empty()) {
-                    blockToRequests.erase(diskId);
-                }
-            }
-        }
-    }
-}
-
 void ReadRequestManager::updateAllRequestsStatus(const std::unordered_map<int, std::vector<int>>& readUnits) {
-    // 跟踪已更新的请求，避免重复更新
-    std::unordered_set<int> updatedRequests;
     
     // 对于每个被读取的磁盘的每个单元
     for (const auto& [diskId, units] : readUnits) {
         for (int unitPos : units) {
-            // 获取与该单元关联的所有请求
-            auto diskIt = blockToRequests.find(diskId);
-            if (diskIt != blockToRequests.end()) {
-                auto unitIt = diskIt->second.find(unitPos);
-                if (unitIt != diskIt->second.end()) {
-                    // 更新每个关联的请求
-                    for (int requestId : unitIt->second) {
-                        // 避免重复更新
-                        // if (updatedRequests.find(requestId) == updatedRequests.end()) {
-                            auto requestIt = requests.find(requestId);
-                            if (requestIt != requests.end() && requestIt->second.status == REQUEST_PROCESSING) {
-                                // 更新该请求的状态
-                                ReadRequest& request = requestIt->second;
-                                
-                                // 从剩余单元中移除已读取的单元
-                                auto& diskUnits = request.remainingUnits[diskId];
-                                if (diskUnits.erase(unitPos) == 1) {
-                                    request.totalRemainingUnits--;
-                                    
-                                    // 检查请求是否已完成
-                                    if (request.totalRemainingUnits == 0) {
-                                        request.status = REQUEST_COMPLETED;
-                                        processingRequests.erase(requestId);
-                                        completedRequests.insert(requestId);
-                                    }
-                                }
-                            }
+            // 使用ObjectManager获取该单元对应的对象ID
+            int objectId = objectManager.getObjectIdByDiskBlock(diskId, unitPos);
+            if (objectId == -1) {
+                continue; // 没有找到对应的对象，跳过
+            }
+            
+            // 获取与该对象关联的所有请求
+            auto objectIt = objectToRequests.find(objectId);
+            if (objectIt != objectToRequests.end()) {
+                // 更新每个关联的请求
+                for (int requestId : objectIt->second) {
+                    auto requestIt = requests.find(requestId);
+                    if (requestIt != requests.end() && requestIt->second.status == REQUEST_PROCESSING) {
+                        // 更新该请求的状态
+                        ReadRequest& request = requestIt->second;
+                        
+                        // 从剩余单元中移除已读取的单元
+                        auto& diskUnits = request.remainingUnits[diskId];
+                        if (diskUnits.erase(unitPos) == 1) {
+                            request.totalRemainingUnits--;
                             
-                            // 标记该请求为已更新
-                            updatedRequests.insert(requestId);
-                        // }
+                            // 检查请求是否已完成
+                            if (request.totalRemainingUnits == 0) {
+                                request.status = REQUEST_COMPLETED;
+                                processingRequests.erase(requestId);
+                                completedRequests.insert(requestId);
+                            }
+                        }
                     }
-                    
-                    // 清除该单元位置的所有映射，因为它已经被读取
-                    unitIt->second.clear();
-                    diskIt->second.erase(unitPos);
                 }
             }
         }
@@ -308,14 +273,6 @@ void ReadRequestManager::resetTimeSlice() {
             }
 
         }
-
-        
-        // 清除剩余的块到请求映射
-        for (const auto& [diskId, units] : requestIt->second.remainingUnits) {
-            for (int unitPos : units) {
-                unregisterBlockToRequest(diskId, unitPos, requestId);
-            }
-        }
         
         // 从请求映射中删除请求
         requests.erase(requestId);
@@ -370,8 +327,6 @@ std::vector<int> ReadRequestManager::cancelRequestsByObjectId(int objectId) {
             for (int unitPos : units) {
                 diskHeadManager.cancelReadRequest(diskId, unitPos);
                 
-                // 清除块到请求的映射
-                unregisterBlockToRequest(diskId, unitPos, requestId);
             }
         }
         
