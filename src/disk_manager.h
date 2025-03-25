@@ -18,8 +18,8 @@
  * 管理N个磁盘，每个磁盘包含V个存储单元
  * 存储单元状态:
  * -1: 表示该存储单元空闲
- * 0: 表示存储单元被分配但未被读取
- * >=1: 表示该存储单元在时间片x下被读取
+ * >=0: 表示存储单元被分配但未被读取
+ * >=1: 表示该存储单元在object内的排序
  */
 class DiskManager {
 public:
@@ -81,19 +81,19 @@ public:
     bool isBlockFree(int diskId, int position) const;
     
     /**
-     * 设置磁盘块在特定时间片被读取
+     * 设置磁盘块在object内的排序
      * 参数 diskId: 磁盘ID (1 <= diskId <= N)
      * 参数 position: 存储单元位置 (1 <= position <= V)
-     * 参数 timeSlice: 时间片编号 (>= 1)
+     * 参数 objectIndex: object的index (>= 0)
      * 返回值: 是否设置成功
      */
-    bool setBlockRead(int diskId, int position, int timeSlice);
+    bool setBlockRead(int diskId, int position, int objectIndex);
     
     /**
      * 获取磁盘块的读取状态
      * 参数 diskId: 磁盘ID (1 <= diskId <= N)
      * 参数 position: 存储单元位置 (1 <= position <= V)
-     * 返回值: 块的读取状态，-1表示空闲，0表示已分配未读取，>0表示读取的时间片
+     * 返回值: 块的读取状态，-1表示空闲，>=0表示在object内的排序
      */
     int getBlockStatus(int diskId, int position) const;
 
@@ -117,7 +117,7 @@ private:
     
     // 使用二维数组存储单元状态
     // diskUnits[i][j] 表示第i个磁盘的第j个单元的状态
-    // -1: 空闲, 0: 已分配未读取, >= 1: 在时间片x被读取
+    // -1: 空闲,  >= 0: 在object内的排序
     std::vector<std::vector<int>> diskUnits;
     
     // 每个磁盘的空闲块数量

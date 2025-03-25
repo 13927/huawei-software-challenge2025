@@ -154,7 +154,6 @@ std::shared_ptr<const Object> ObjectManager::getObject(int id) const {
     }
     return nullptr;
 #else
-    // 优化版本：直接返回
     return (it != objects.end()) ? std::make_shared<const Object>(it->second) : nullptr;
 #endif
 }

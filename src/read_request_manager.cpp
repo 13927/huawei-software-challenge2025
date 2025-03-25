@@ -77,62 +77,127 @@ bool ReadRequestManager::allocateReadRequests() {
         
         // 初始化请求的磁盘单元信息
         if (request.remainingUnits.empty()) {
-            // 找到离磁头最近的副本
-            int closestReplicaIndex = -1;
-            int closestDistance = INT_MAX;
-            
-            // 检查每个副本
-            for (int replicaIndex = 0; replicaIndex < REP_NUM; replicaIndex++) {
-                const StorageUnit& replica = obj->getReplica(replicaIndex);
-                int diskId = replica.diskId;
-                
-                // 获取该磁盘的磁头位置
-                int headPosition = diskHeadManager.getHeadPosition(diskId);
-                
-                // 计算该副本的首个存储单元到磁头的最小距离
-                int minDistance = INT_MAX;
-                for (const auto& blockPair : replica.blockLists) {
-                    int startPos = blockPair.first;
+            // 查找是否有处理中的请求正在读取相同的对象
+            bool hasProcessingRequest = false;
+
+            // 请求读取对象的待读取的索引，初始化为0到object.size()
+            std::unordered_set<int> unprocessedBlockIndex;
+            for (int i = 0; i < obj->getSize(); i++) {
+                unprocessedBlockIndex.insert(i);
+            }
+            // 待处理的磁盘单元索引 <磁盘id, 单元索引>
+            std::vector<std::pair<int, int>> unprocessedDiskUnit;
+
+            auto objectRequestsIt = objectToRequests.find(request.objectId);
+            if (objectRequestsIt != objectToRequests.end()) {
+                // 检查与该对象关联的所有请求
+                for (int otherRequestId : objectRequestsIt->second) {
+                    // 跳过当前请求自身
+                    if (otherRequestId == requestId) {
+                        continue;
+                    }
                     
-                    // 计算距离（考虑环形结构）
-                    int distance = (startPos - headPosition)>0 ? (startPos - headPosition) : (diskHeadManager.getDiskManager().getUnitCount() - headPosition + startPos);
-                    int diskSize = diskHeadManager.getDiskManager().getUnitCount();
-                    int alternativeDistance = diskSize - distance;
-                    int finalDistance = std::min(distance, alternativeDistance);
-                    
-                    minDistance = std::min(minDistance, finalDistance);
+                    auto otherRequestIt = requests.find(otherRequestId);
+                    if (otherRequestIt != requests.end() && otherRequestIt->second.status == REQUEST_PROCESSING) {
+                        // 找到一个处理中的相同对象请求
+                        hasProcessingRequest = true;
+                        const ReadRequest& otherRequest = otherRequestIt->second;
+                        
+                        // 对于每个磁盘，记录正在处理的单元
+                        for (const auto& [diskId, units] : otherRequest.remainingUnits) {
+                            for (int unitPos : units) {
+                                int blockIndex = diskHeadManager.getDiskManager().getBlockStatus(diskId, unitPos);
+                                if (unprocessedBlockIndex.erase(blockIndex) > 0) {
+                                    unprocessedDiskUnit.push_back(std::make_pair(diskId, unitPos));
+                                }
+                            }
+                        }
+                    }
                 }
-                
-                // 如果此副本距离更近，更新最近副本索引
-                if (minDistance < closestDistance) {
-                    closestDistance = minDistance;
-                    closestReplicaIndex = replicaIndex;
-                }
             }
             
-            // 如果找不到有效副本，使用第一个副本（不应该发生）
-            if (closestReplicaIndex == -1) {
-                closestReplicaIndex = 0;
-            }
-            
-            // 使用最近的副本
-            const StorageUnit& unit = obj->getReplica(closestReplicaIndex);
-            int diskId = unit.diskId;
-            
-            if (request.remainingUnits.find(diskId) == request.remainingUnits.end()) {
-                request.remainingUnits[diskId] = std::set<int>();
-            }
-            
-            // 添加需要读取的单元位置
-            for (const auto& blockPair : unit.blockLists) {
-                int startPos = blockPair.first;
-                int length = blockPair.second;
-                
-                for (int j = 0; j < length; j++) {
-                    int unitPos = startPos + j;
+            if (hasProcessingRequest && unprocessedBlockIndex.empty()) {
+
+                for (auto [diskId, unitPos] : unprocessedDiskUnit) {
                     request.remainingUnits[diskId].insert(unitPos);
-                    
                 }
+    
+            } else {
+                // 没有处理中的相同对象请求，使用原始逻辑选择最近的副本
+                
+                // 找到离磁头最近的副本
+                int closestReplicaIndex = -1;
+                int closestDistance = INT_MAX;
+                
+                // 检查每个副本
+                for (int replicaIndex = 0; replicaIndex < REP_NUM; replicaIndex++) {
+                    const StorageUnit& replica = obj->getReplica(replicaIndex);
+                    int diskId = replica.diskId;
+                    
+                    // 获取该磁盘的磁头位置
+                    int headPosition = diskHeadManager.getHeadPosition(diskId);
+                    
+                    // 计算该副本的首个存储单元到磁头的最小距离
+                    int minDistance = INT_MAX;
+                    for (const auto& blockPair : replica.blockLists) {
+                        int startPos = blockPair.first;
+
+                        int distance = (startPos - headPosition)>0 ? (startPos - headPosition) : (diskHeadManager.getDiskManager().getUnitCount() - headPosition + startPos);
+   
+                        minDistance = std::min(minDistance, distance);
+                    }
+                    
+                    // 如果此副本距离更近，更新最近副本索引
+                    if (minDistance < closestDistance) {
+                        closestDistance = minDistance;
+                        closestReplicaIndex = replicaIndex;
+                    }
+                }
+                
+                // 如果找不到有效副本，使用第一个副本（不应该发生）
+                if (closestReplicaIndex == -1) {
+                    closestReplicaIndex = 0;
+                }
+                
+                // 使用最近的副本
+                const StorageUnit& unit = obj->getReplica(closestReplicaIndex);
+                int diskId = unit.diskId;
+                
+                if (hasProcessingRequest) {
+                    for (auto [diskId, unitPos] : unprocessedDiskUnit) {
+                        request.remainingUnits[diskId].insert(unitPos);
+                    }
+
+                    for (const auto& blockPair : unit.blockLists) {
+                        int startPos = blockPair.first;
+                        int length = blockPair.second;
+                        
+                        for (int j = 0; j < length; j++) {
+                            int unitPos = startPos + j;
+                            int blockIndex = diskHeadManager.getDiskManager().getBlockStatus(diskId, unitPos);
+                            auto it = unprocessedBlockIndex.find(blockIndex);
+                            if (it != unprocessedBlockIndex.end()) {
+                                request.remainingUnits[diskId].insert(unitPos);
+                                unprocessedBlockIndex.erase(it);
+                            }
+                        }
+                    }
+
+                }
+                else {
+                    // 添加需要读取的单元位置
+                    for (const auto& blockPair : unit.blockLists) {
+                        int startPos = blockPair.first;
+                        int length = blockPair.second;
+                        
+                        for (int j = 0; j < length; j++) {
+                            int unitPos = startPos + j;
+                            request.remainingUnits[diskId].insert(unitPos);
+                            // request.totalRemainingUnits++;错误的，在addrequest中已经初始化
+                        }
+                    }
+                }
+                
             }
         }
         

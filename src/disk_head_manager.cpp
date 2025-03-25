@@ -179,9 +179,6 @@ void DiskHeadManager::generateTasksForDisk(int diskId) {
             HeadTask readTask(ACTION_READ, nextUnit);
             taskQueues[diskId].push(readTask);
 
-            // 设置磁盘块在当前时间片被读取
-            diskManager.setBlockRead(diskId, nextUnit, currentTimeSlice);
-            
             // 更新可用令牌和当前位置
             availableTokens -= readCost;
             // 更新磁头状态
@@ -258,9 +255,7 @@ void DiskHeadManager::generateTasksForDisk(int diskId) {
                     for (int i = 0; i < possibleReadSteps; i++) {
                         HeadTask readTask(ACTION_READ, currentPos);
                         taskQueues[diskId].push(readTask);
-                        
-                        // 设置磁盘块在当前时间片被读取
-                        diskManager.setBlockRead(diskId, currentPos, currentTimeSlice);
+
                         diskReadUnits[diskId].erase(currentPos);
                         currentPos = (currentPos % unitCount) + 1;
                         

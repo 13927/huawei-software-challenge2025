@@ -62,8 +62,9 @@ std::vector<std::pair<int, int>> DiskManager::allocateOnDisk(int diskId, int siz
     
     if (startPos != -1) {
         // 找到连续空间，分配它
+        int objectIndex = 0;
         for (int i = startPos; i < startPos + size; i++) {
-            diskUnits[diskId][i] = 0;  // 设为已分配但未读取
+            diskUnits[diskId][i] = objectIndex++;  // 设为已分配但未读取
         }
         
         // 更新磁盘空闲空间信息
@@ -79,6 +80,7 @@ std::vector<std::pair<int, int>> DiskManager::allocateOnDisk(int diskId, int siz
         int remaining = size;
         
         // 逐个分配空闲单元
+        int objectIndex = 0;
         for (int i = 1; i <= v && remaining > 0; i++) {
             if (diskUnits[diskId][i] == -1) {  // 空闲单元
                 int startBlock = i;
@@ -86,7 +88,7 @@ std::vector<std::pair<int, int>> DiskManager::allocateOnDisk(int diskId, int siz
                 
                 // 寻找连续的空闲单元
                 while (i <= v && diskUnits[diskId][i] == -1 && blockSize < remaining) {
-                    diskUnits[diskId][i] = 0;  // 设为已分配
+                    diskUnits[diskId][i] = objectIndex++;  // 设为已分配
                     blockSize++;
                     i++;
                 }
@@ -176,16 +178,17 @@ bool DiskManager::isBlockFree(int diskId, int position) const {
     return (diskUnits[diskId][position] == -1);
 }
 
-bool DiskManager::setBlockRead(int diskId, int position, int timeSlice) {
+bool DiskManager::setBlockRead(int diskId, int position, int objectIndex) {
 #ifndef NDEBUG
-    if (diskId < 1 || diskId > n || position < 1 || position > v || timeSlice < 1) {
+    if (diskId < 1 || diskId > n || position < 1 || position > v) {
         return false;
     }
 #endif
     
-    // 只有已分配的块才能标记为已读取
-    if (diskUnits[diskId][position] >= 0) {
-        diskUnits[diskId][position] = timeSlice;
+    // 只有已分配的块才能设置对象序号
+    // 注意：现在我们接受objectIndex为0，因为对象序号可以从0开始
+    if (diskUnits[diskId][position] >= -1) {  // -1表示空闲，>=0表示已分配
+        diskUnits[diskId][position] = objectIndex;  // 设置为对象中的序号
         return true;
     }
     
@@ -199,6 +202,9 @@ int DiskManager::getBlockStatus(int diskId, int position) const {
     }
 #endif
     
+    // 返回磁盘块的状态
+    // -1: 表示空闲
+    // >=0: 表示在对象中的序号
     return diskUnits[diskId][position];
 }
 
