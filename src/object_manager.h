@@ -12,6 +12,9 @@
 #include "disk_manager.h"
 #include "constants.h"
 
+// 前向声明FrequencyData类
+class FrequencyData;
+
 // 表示磁盘上的存储单元
 struct StorageUnit {
     int diskId;                      // 存储的磁盘ID
@@ -50,6 +53,7 @@ class ObjectManager {
 private:
     std::unordered_map<int, Object> objects;  // 对象ID到对象的映射
     DiskManager& diskManager;                 // 磁盘管理器引用
+    FrequencyData& freqData;                  // FrequencyData指针
     
     // 从磁盘存储单元到对象ID的映射
     // 索引为磁盘ID，unordered_map的键为存储单元位置，值为对象ID
@@ -62,7 +66,7 @@ private:
     void updateBlockToObjectMapping(int objectId, int diskId, const std::vector<std::pair<int, int>>& blocks, bool isAdd);
 
 public:
-    ObjectManager(DiskManager& dm) : diskManager(dm) {
+    ObjectManager(DiskManager& dm, FrequencyData& fd) : diskManager(dm), freqData(fd) {
         // 初始化映射向量，大小为磁盘数量+1（因为磁盘ID从1开始）
         diskBlockToObjectMap.resize(diskManager.getDiskCount() + 1);
     }

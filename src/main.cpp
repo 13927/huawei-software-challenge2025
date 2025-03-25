@@ -281,7 +281,7 @@ int main() {
     DiskManager diskManager(N, V);
     
     // 创建对象管理器
-    ObjectManager objectManager(diskManager);
+    ObjectManager objectManager(diskManager, freqData);
     
     // 全局预处理
     globalPreprocessing();

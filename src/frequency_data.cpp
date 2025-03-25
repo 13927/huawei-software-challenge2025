@@ -690,7 +690,7 @@ void FrequencyData::allocateTagsToDiskUnits() {
     #endif
 }
 
-// 在文件末尾实现查询接口
+// 实现查询接口
 std::vector<std::tuple<int, int>> FrequencyData::getTagRangesOnDisk(int tag, int diskId) const {
     std::vector<std::tuple<int, int>> ranges;
     

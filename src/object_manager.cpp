@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <ctime>
+#include "frequency_data.h"
 
 // Object类构造函数
 Object::Object(int id, int size, int tag) 
@@ -69,35 +70,72 @@ bool ObjectManager::createObject(int id, int size, int tag) {
 // 为对象分配副本存储位置
 bool ObjectManager::allocateReplicas(Object& obj) {
     int size = obj.getSize();
+    int tag = obj.getTag();
     std::vector<int> usedDisks; // 记录已使用的磁盘ID
     
     // 为每个副本分配空间
     for (int i = 0; i < REP_NUM; i++) {
         int selectedDiskId = -1;
-        
-        // 获取负载最小的N个磁盘，N为总磁盘数量
-        std::vector<int> leastLoadedDisks = diskManager.getLeastLoadedDisks(3);
-        
-        // 从这些磁盘中排除已经用于当前对象副本的磁盘
         std::vector<int> availableDisks;
-        for (int diskId : leastLoadedDisks) {
+
+        // 获取标签在所有磁盘上的预分配情况
+        auto tagAllocations = freqData.getTagAllocation(tag);
+        
+        // 按照预分配的磁盘进行筛选，按负载排序
+        std::vector<std::pair<int, int>> preferredDisks; // <diskId, freeSpace>
+        
+        for (const auto& [diskId, startUnit, endUnit] : tagAllocations) {
+            // 排除已经用于当前对象副本的磁盘
             if (std::find(usedDisks.begin(), usedDisks.end(), diskId) == usedDisks.end()) {
-                availableDisks.push_back(diskId);
+                int freeSpace = diskManager.getFreeSpaceOnDisk(diskId);
+                if (freeSpace >= size) {
+                    preferredDisks.push_back({diskId, freeSpace});
+                }
             }
         }
         
-        // 尝试按照负载从小到大的顺序在磁盘上分配空间
-        for (int diskId : availableDisks) {
-            // 检查空闲空间是否足够
-            if (diskManager.getFreeSpaceOnDisk(diskId) >= size) {
-                // 尝试在该磁盘上分配空间
-                std::vector<std::pair<int, int>> allocatedBlocks = diskManager.allocateOnDisk(diskId, size);
-                if (!allocatedBlocks.empty()) {
-                    // 分配成功
-                    obj.setReplica(i, diskId, allocatedBlocks);
-                    usedDisks.push_back(diskId);
-                    selectedDiskId = diskId;
-                    break;
+        // 按空闲空间从大到小排序（负载从小到大）
+        std::sort(preferredDisks.begin(), preferredDisks.end(), 
+                    [](const auto& a, const auto& b) { return a.second > b.second; });
+        
+        // 从预分配的磁盘中选择
+        for (const auto& [diskId, freeSpace] : preferredDisks) {
+            std::vector<std::pair<int, int>> allocatedBlocks = diskManager.allocateOnDisk(diskId, size);
+            if (!allocatedBlocks.empty()) {
+                // 分配成功
+                obj.setReplica(i, diskId, allocatedBlocks);
+                usedDisks.push_back(diskId);
+                selectedDiskId = diskId;
+                break;
+            }
+        }
+        
+        
+        // 如果在预分配的磁盘上分配失败，则使用原有的策略
+        if (selectedDiskId == -1) {
+            // 获取负载最小的磁盘
+            std::vector<int> leastLoadedDisks = diskManager.getLeastLoadedDisks(diskManager.getDiskCount());
+            
+            // 从这些磁盘中排除已经用于当前对象副本的磁盘
+            for (int diskId : leastLoadedDisks) {
+                if (std::find(usedDisks.begin(), usedDisks.end(), diskId) == usedDisks.end()) {
+                    availableDisks.push_back(diskId);
+                }
+            }
+            
+            // 尝试按照负载从小到大的顺序在磁盘上分配空间
+            for (int diskId : availableDisks) {
+                // 检查空闲空间是否足够
+                if (diskManager.getFreeSpaceOnDisk(diskId) >= size) {
+                    // 尝试在该磁盘上分配空间
+                    std::vector<std::pair<int, int>> allocatedBlocks = diskManager.allocateOnDisk(diskId, size);
+                    if (!allocatedBlocks.empty()) {
+                        // 分配成功
+                        obj.setReplica(i, diskId, allocatedBlocks);
+                        usedDisks.push_back(diskId);
+                        selectedDiskId = diskId;
+                        break;
+                    }
                 }
             }
         }
