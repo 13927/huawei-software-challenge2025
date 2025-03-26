@@ -46,6 +46,18 @@ public:
     std::vector<std::pair<int, int>> allocateOnDisk(int diskId, int size);
 
     /**
+     * 在指定磁盘的指定区间内分配存储单元
+     * 参数 diskId: 磁盘ID (1 <= diskId <= N)
+     * 参数 size: 需要分配的存储单元数量
+     * 参数 startUnit: 区间起始单元位置 (1 <= startUnit <= V)
+     * 参数 endUnit: 区间结束单元位置 (startUnit <= endUnit <= V)
+     * 返回值: 分配的存储单元块列表，每个pair表示<起始位置, 长度>
+     *        如果在指定区间内找不到连续空间，会尝试碎片化存储
+     *        如果分配失败则返回空向量
+     */
+    std::vector<std::pair<int, int>> allocateOnDisk(int diskId, int size, int startUnit, int endUnit);
+
+    /**
      * 释放指定磁盘上的存储单元
      * 参数 diskId: 磁盘ID (1 <= diskId <= N)
      * 参数 blocks: 存储单元块列表，每个pair表示<起始位置, 长度>
@@ -128,6 +140,9 @@ private:
     
     // 查找连续空闲单元
     std::pair<int, int> findConsecutiveFreeUnits(int diskId, int size) const;
+    
+    // 在指定区间内查找连续空闲单元
+    std::pair<int, int> findConsecutiveFreeUnits(int diskId, int size, int startUnit, int endUnit) const;
 };
 
 #endif // DISK_MANAGER_H 

@@ -100,6 +100,36 @@ bool ObjectManager::allocateReplicas(Object& obj) {
         
         // 从预分配的磁盘中选择
         for (const auto& [diskId, freeSpace] : preferredDisks) {
+            // 先尝试在该磁盘上的预分配区间内分配
+            bool allocated = false;
+            
+            // 遍历该标签在该磁盘上的所有预分配区间
+            for (const auto& [diskId2, startUnit, endUnit] : tagAllocations) {
+                if (diskId == diskId2) {
+                    // 检查区间是否足够大
+                    if (endUnit - startUnit + 1 >= size) {
+                        // 尝试在此区间内分配
+                        std::vector<std::pair<int, int>> allocatedBlocks = 
+                            diskManager.allocateOnDisk(diskId, size, startUnit, endUnit);
+                        
+                        if (!allocatedBlocks.empty()) {
+                            // 分配成功
+                            obj.setReplica(i, diskId, allocatedBlocks);
+                            usedDisks.push_back(diskId);
+                            selectedDiskId = diskId;
+                            allocated = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // 如果在预分配区间内分配成功，继续下一个副本
+            if (allocated) {
+                break;
+            }
+            
+            // 如果在预分配区间内分配失败，尝试在整个磁盘上分配
             std::vector<std::pair<int, int>> allocatedBlocks = diskManager.allocateOnDisk(diskId, size);
             if (!allocatedBlocks.empty()) {
                 // 分配成功
@@ -109,7 +139,6 @@ bool ObjectManager::allocateReplicas(Object& obj) {
                 break;
             }
         }
-        
         
         // 如果在预分配的磁盘上分配失败，则使用原有的策略
         if (selectedDiskId == -1) {

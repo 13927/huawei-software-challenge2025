@@ -44,6 +44,38 @@ std::pair<int, int> DiskManager::findConsecutiveFreeUnits(int diskId, int size) 
     return {-1, 0};  // 未找到连续空间
 }
 
+// 在指定的区间内寻找连续的空闲单元
+std::pair<int, int> DiskManager::findConsecutiveFreeUnits(int diskId, int size, int startUnit, int endUnit) const {
+#ifndef NDEBUG
+    if (diskId < 1 || diskId > n || size <= 0 || startUnit < 1 || endUnit > v || startUnit > endUnit) {
+        return {-1, 0}; // 参数错误，返回未找到
+    }
+#endif
+
+    int startPos = -1;
+    int consecutiveCount = 0;
+    
+    for (int i = startUnit; i <= endUnit; i++) {
+        if (diskUnits[diskId][i] == -1) {  // 空闲单元
+            if (startPos == -1) {
+                startPos = i;  // 记录开始位置
+                consecutiveCount = 1;
+            } else {
+                consecutiveCount++;
+            }
+            
+            if (consecutiveCount >= size) {
+                return {startPos, consecutiveCount};  // 找到足够大的连续空间
+            }
+        } else {  // 非空闲单元，重置计数
+            startPos = -1;
+            consecutiveCount = 0;
+        }
+    }
+    
+    return {-1, 0};  // 未找到连续空间
+}
+
 std::vector<std::pair<int, int>> DiskManager::allocateOnDisk(int diskId, int size) {
 #ifndef NDEBUG
     if (diskId < 1 || diskId > n || size <= 0 || size > v) {
@@ -88,6 +120,84 @@ std::vector<std::pair<int, int>> DiskManager::allocateOnDisk(int diskId, int siz
                 
                 // 寻找连续的空闲单元
                 while (i <= v && diskUnits[diskId][i] == -1 && blockSize < remaining) {
+                    diskUnits[diskId][i] = objectIndex++;  // 设为已分配
+                    blockSize++;
+                    i++;
+                }
+                
+                result.push_back({startBlock, blockSize});
+                remaining -= blockSize;
+                i--;  // 回退一步，因为循环会自增
+            }
+        }
+        
+        if (remaining <= 0) {
+            // 更新磁盘空闲空间信息
+            diskFreeSpaces[diskId] -= size;
+            return result;  // 成功分配所有需要的空间
+        } else {
+            // 分配失败，恢复已分配的单元
+            for (const auto& block : result) {
+                for (int i = block.first; i < block.first + block.second; i++) {
+                    diskUnits[diskId][i] = -1;  // 恢复为空闲
+                }
+            }
+            return {};  // 返回空向量表示失败
+        }
+    }
+}
+
+// 在指定区间内分配存储空间
+std::vector<std::pair<int, int>> DiskManager::allocateOnDisk(int diskId, int size, int startUnit, int endUnit) {
+#ifndef NDEBUG
+    if (diskId < 1 || diskId > n || size <= 0 || startUnit < 1 || endUnit > v || startUnit > endUnit) {
+        return {}; // 参数错误，返回空向量
+    }
+#endif
+    
+    // 检查区间内可用空间是否足够
+    int freeSpace = 0;
+    for (int i = startUnit; i <= endUnit; i++) {
+        if (diskUnits[diskId][i] == -1) {
+            freeSpace++;
+        }
+    }
+    
+    if (freeSpace < size) {
+        return {}; // 区间内空间不足
+    }
+    
+    // 在指定区间内寻找连续空闲单元
+    auto [startPos, consecutiveSize] = findConsecutiveFreeUnits(diskId, size, startUnit, endUnit);
+    
+    if (startPos != -1) {
+        // 找到连续空间，分配它
+        int objectIndex = 0;
+        for (int i = startPos; i < startPos + size; i++) {
+            diskUnits[diskId][i] = objectIndex++;  // 设为已分配但未读取
+        }
+        
+        // 更新磁盘空闲空间信息
+        diskFreeSpaces[diskId] -= size;
+        
+        // 创建并返回分配的块
+        std::vector<std::pair<int, int>> result;
+        result.push_back({startPos, size});
+        return result;
+    } else {
+        // 没有找到足够大的连续空间，尝试在区间内碎片化分配
+        std::vector<std::pair<int, int>> result;
+        int remaining = size;
+        
+        // 逐个分配区间内的空闲单元
+        int objectIndex = 0;
+        for (int i = startUnit; i <= endUnit && remaining > 0; i++) {
+            if (diskUnits[diskId][i] == -1) {  // 空闲单元
+                int startBlock = i;
+                int blockSize = 0;
+                
+                // 寻找连续的空闲单元
+                while (i <= endUnit && diskUnits[diskId][i] == -1 && blockSize < remaining) {
                     diskUnits[diskId][i] = objectIndex++;  // 设为已分配
                     blockSize++;
                     i++;
