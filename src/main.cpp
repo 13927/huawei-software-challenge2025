@@ -70,7 +70,7 @@ void globalPreprocessing() {
     std::ofstream outFile("allocation_result.txt");
     if (outFile.is_open()) {
         outFile << "=== 磁盘预分配结果 ===\n\n";
-        
+         
         // 输出所有标签的分配情况
         outFile << "标签分配情况:\n";
         outFile << "标签ID\t分配磁盘数\t总分配单元数\t分配详情\n";
