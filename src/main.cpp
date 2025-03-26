@@ -63,7 +63,7 @@ void globalPreprocessing() {
     // 分析数据并预分配空间
     freqData.analyzeAndPreallocate();
 
-    #ifndef NDEBUG
+    // #ifndef NDEBUG
     // 输出磁盘分配结果
     std::ofstream outFile("allocation_result.txt");
     if (outFile.is_open()) {
@@ -72,7 +72,7 @@ void globalPreprocessing() {
         // 输出所有标签的分配情况
         outFile << "标签分配情况:\n";
         outFile << "标签ID\t分配磁盘数\t总分配单元数\t分配详情\n";
-        for (int tag = 1; tag <= M; tag++) {
+        for (int tag = 0; tag <= M; tag++) {
             int diskCount = freqData.getTagDiskCount(tag);
             int totalUnits = freqData.getTagTotalAllocatedUnits(tag);
             auto allocation = freqData.getTagAllocation(tag);
@@ -120,7 +120,7 @@ void globalPreprocessing() {
         // 输出分配统计信息
         outFile << "\n=== 分配统计 ===\n";
         int totalAllocatedUnits = 0;
-        for (int tag = 1; tag <= M; tag++) {
+        for (int tag = 0; tag <= M; tag++) {
             totalAllocatedUnits += freqData.getTagTotalAllocatedUnits(tag);
         }
         int totalCapacity = N * V;
@@ -135,7 +135,7 @@ void globalPreprocessing() {
 
     }
     
-    #endif
+    // #endif
 }
 
 void timestamp_action()

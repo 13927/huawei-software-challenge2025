@@ -320,16 +320,11 @@ void FrequencyData::allocateTagsToDiskUnits() {
     
     // 为每个标签确定分配的磁盘数量
     std::vector<int> tagDiskCount(tagCount + 1, 0);
-    const int MIN_DISKS_PER_TAG = 3;  // 每个标签至少分配3个磁盘
     
-    // 计算基于优先级的磁盘数量分配
-    double totalPriority = 0.0;
-    for (const auto& [tag, priority] : tagPriorityPairs) {
-        totalPriority += priority > 0 ? priority : 0.01; // 确保每个标签至少有一些优先级
+    // 将所有标签的磁盘分配数量设置为diskCount
+    for (int tag = 1; tag <= tagCount; tag++) {
+        tagDiskCount[tag] = diskCount;
     }
-    
-    int extraDisksToDistribute = diskCount - MIN_DISKS_PER_TAG * tagCount;
-    if (extraDisksToDistribute < 0) extraDisksToDistribute = 0;
     
     #ifndef NDEBUG
     std::ofstream diskDebugFile("disk_allocation_debug.txt");
@@ -337,8 +332,7 @@ void FrequencyData::allocateTagsToDiskUnits() {
         diskDebugFile << "=== 磁盘分配调试信息 ===\n\n";
         diskDebugFile << "标签数量: " << tagCount << "\n";
         diskDebugFile << "磁盘数量: " << diskCount << "\n";
-        diskDebugFile << "每个磁盘单元数: " << unitsPerDisk << "\n";
-        diskDebugFile << "额外可分配磁盘数: " << extraDisksToDistribute << "\n\n";
+        diskDebugFile << "每个磁盘单元数: " << unitsPerDisk << "\n\n";
         
         diskDebugFile << "标签优先级排序:\n";
         for (const auto& [tag, priority] : tagPriorityPairs) {
@@ -347,29 +341,6 @@ void FrequencyData::allocateTagsToDiskUnits() {
         diskDebugFile << "\n";
     }
     #endif
-    
-    // 根据优先级分配额外的磁盘
-    for (const auto& [tag, priority] : tagPriorityPairs) {
-        // 基础分配：每个标签至少3个磁盘
-        tagDiskCount[tag] = MIN_DISKS_PER_TAG;
-        
-        // 额外分配：根据优先级比例
-        double priorityRatio = (priority > 0 ? priority : 0.01) / totalPriority;
-        int extraDisks = static_cast<int>(extraDisksToDistribute * priorityRatio);
-        
-        // 确保不会分配超过可用的磁盘数量
-        tagDiskCount[tag] += extraDisks;
-        if (tagDiskCount[tag] > diskCount) {
-            tagDiskCount[tag] = diskCount;
-        }
-        
-        #ifndef NDEBUG
-        if (diskDebugFile.is_open()) {
-            diskDebugFile << "标签 " << tag << " 分配磁盘数: " << tagDiskCount[tag] 
-                     << " (基础=" << MIN_DISKS_PER_TAG << ", 额外=" << extraDisks << ")\n";
-        }
-        #endif
-    }
     
     // 每个标签每个磁盘分配的单元数
     std::vector<std::vector<int>> tagDiskAllocation(tagCount + 1, std::vector<int>(diskCount + 1, 0));
@@ -688,6 +659,53 @@ void FrequencyData::allocateTagsToDiskUnits() {
         outFile.close();
     }
     #endif
+    
+    // 将未分配的系统容量分配给虚拟标签 tag 0
+    std::vector<std::tuple<int, int, int>> tag0Allocations;
+    
+    for (int disk = 1; disk <= diskCount; ++disk) {
+        // 获取该磁盘上已分配的单元区间，按起始位置排序
+        std::vector<std::pair<int, int>> allocatedRanges; // <start, end>
+        for (const auto& [start, end, tag] : diskUnitRanges[disk]) {
+            allocatedRanges.push_back({start, end});
+        }
+        
+        std::sort(allocatedRanges.begin(), allocatedRanges.end());
+        
+        // 找出该磁盘上未分配的区间
+        std::vector<std::pair<int, int>> freeRanges; // <start, end>
+        int currentPos = 1;
+        
+        for (const auto& [start, end] : allocatedRanges) {
+            if (currentPos < start) {
+                // 发现一个未分配区间
+                freeRanges.push_back({currentPos, start - 1});
+            }
+            currentPos = end + 1;
+        }
+        
+        // 检查最后一个可能的未分配区间
+        if (currentPos <= unitsPerDisk) {
+            freeRanges.push_back({currentPos, unitsPerDisk});
+        }
+        
+        // 将未分配区间分配给 tag 0
+        for (const auto& [start, end] : freeRanges) {
+            if (start <= end) {
+                // 添加到磁盘分配结果
+                DiskRange range = {start, end, 0}; // tag 0
+                diskAllocationResult[disk].push_back(range);
+                
+                // 添加到标签分配结果
+                tag0Allocations.push_back(std::make_tuple(disk, start, end));
+            }
+        }
+    }
+    
+    // 将 tag 0 的分配结果写入 tagAllocationResult
+    if (!tag0Allocations.empty()) {
+        tagAllocationResult[0] = tag0Allocations;
+    }
 }
 
 // 实现查询接口
