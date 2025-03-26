@@ -7,10 +7,10 @@
 #include <algorithm>
 #include <iostream>
 #include <cmath>
-#include "disk_manager.h"
 #include "object_manager.h"
 #include "constants.h"
 #include <tuple>
+
 
 // 存储和分析频率数据的类
 class FrequencyData {
@@ -74,13 +74,13 @@ public:
     void analyzeAndPreallocate();
     
     // 查询接口
-    // 获取标签在特定磁盘上的分配区间
+    // 获取标签在特定磁盘上的分配区间 <startUnit, endUnit>
     std::vector<std::tuple<int, int>> getTagRangesOnDisk(int tag, int diskId) const;
     
-    // 获取标签在所有磁盘上的分配情况
+    // 获取标签在所有磁盘上的分配情况 <disk_id, start_unit, end_unit>
     std::vector<std::tuple<int, int, int>> getTagAllocation(int tag) const;
     
-    // 获取特定磁盘上的所有分配区间
+    // 获取特定磁盘上的所有分配区间 <startUnit, endUnit, Tag>[]
     std::vector<std::tuple<int, int, int>> getDiskAllocation(int diskId) const;
     
     // 获取标签分配的磁盘数量
@@ -88,6 +88,9 @@ public:
     
     // 获取标签总分配空间
     int getTagTotalAllocatedUnits(int tag) const;
+
+    // 获取标签总数
+    int getTagCount() const { return tagCount; }
 };
 
 #endif // FREQUENCY_DATA_H 

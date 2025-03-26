@@ -60,10 +60,12 @@ void readSystemParameters() {
 
 // 全局预处理函数
 void globalPreprocessing() {
+    // 读取系统参数
+    readSystemParameters();
     // 分析数据并预分配空间
     freqData.analyzeAndPreallocate();
 
-    // #ifndef NDEBUG
+    #ifndef NDEBUG
     // 输出磁盘分配结果
     std::ofstream outFile("allocation_result.txt");
     if (outFile.is_open()) {
@@ -135,7 +137,7 @@ void globalPreprocessing() {
 
     }
     
-    // #endif
+    #endif
 }
 
 void timestamp_action()
@@ -274,17 +276,13 @@ void handle_read_events(ReadRequestManager& requestManager) {
 }
 
 int main() {
-    // 读取系统参数
-    readSystemParameters();
-    
+    // 全局预处理
+    globalPreprocessing();
     // 创建磁盘管理器
-    DiskManager diskManager(N, V);
+    DiskManager diskManager(N, V, freqData);
     
     // 创建对象管理器
     ObjectManager objectManager(diskManager, freqData);
-    
-    // 全局预处理
-    globalPreprocessing();
     
     // 创建磁盘磁头管理器
     DiskHeadManager diskHeadManager(N, V, G, diskManager);

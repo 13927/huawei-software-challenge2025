@@ -1,21 +1,86 @@
 #include "disk_manager.h"
+#include "frequency_data.h"
 #include <cstdlib>
 #include <cassert>
 #include <cstring>
 #include <algorithm>
+#include <map>
+#include <iostream>
+#include <fstream>
 
-DiskManager::DiskManager(int diskNum, int unitNum) : n(diskNum), v(unitNum) {
+DiskManager::DiskManager(int diskNum, int unitNum, FrequencyData& freqData) 
+    : n(diskNum), v(unitNum), frequencyData(freqData) {
     // 初始化数组，索引从1开始，所以分配0号位置作为哨兵
     diskUnits.resize(n + 1);
     diskFreeSpaces.resize(n + 1, unitNum); // 初始化每个磁盘的空闲空间为unitNum
     
+    // 初始化标签相关的数据结构
+    diskTagFreeSpaces.resize(n + 1);
+    diskTagRanges.resize(n + 1);
+    
     for (int i = 1; i <= n; i++) {
         diskUnits[i].resize(v + 1, -1);  // 初始时所有单元都是空闲的(-1)
+        // 初始化每个磁盘的标签空闲空间数组
+        diskTagFreeSpaces[i].resize(frequencyData.getTagCount() + 1, 0);
     }
+    
+    // 初始化预分配空间
+    initializePreallocatedSpace();
+
+    // 向文件中写入初始化预分配空间信息，不覆盖
+    std::ofstream outFile("preallocated_space.txt", std::ios::app);
+    if (outFile.is_open()) {
+        outFile << "初始化预分配空间" << std::endl;
+        for (int diskId = 1; diskId <= n; diskId++) {
+            outFile << "磁盘" << diskId << "的预分配空间: ";
+            for (int tag = 0; tag <= frequencyData.getTagCount(); tag++) {
+                outFile << diskTagFreeSpaces[diskId][tag] << " ";
+            }
+            outFile << std::endl;
+        }
+    }
+
 }
 
 DiskManager::~DiskManager() {
     // 向量会自动清理内存
+}
+
+void DiskManager::initializePreallocatedSpace() {
+
+    // 遍历每个磁盘
+    for (int diskId = 1; diskId <= n; diskId++) {
+        // 获取该磁盘上的所有标签分配区间
+        auto diskAllocations = frequencyData.getDiskAllocation(diskId);
+
+        // 按起始位置排序
+        std::sort(diskAllocations.begin(), diskAllocations.end(),
+                 [](const auto& a, const auto& b) {
+                     return std::get<0>(a) < std::get<0>(b);
+                 });
+        
+        // 存储标签区间信息
+        diskTagRanges[diskId] = diskAllocations;
+        
+        // 初始化每个标签的空闲空间
+        for (const auto& [startUnit, endUnit, tag] : diskAllocations) {
+            int rangeSize = endUnit - startUnit + 1;
+            diskTagFreeSpaces[diskId][tag] = rangeSize;
+        }
+    }
+}
+
+void DiskManager::updateTagFreeSpace(int diskId, int tag, int change) {
+    if (diskId >= 1 && diskId <= n && tag >= 0 && tag < static_cast<int>(diskTagFreeSpaces[diskId].size())) {
+        diskTagFreeSpaces[diskId][tag] += change;
+    }
+}
+
+int DiskManager::getTagFreeSpace(int diskId, int tag) const {
+    if (diskId >= 1 && diskId <= n && tag >= 0 && tag < static_cast<int>(diskTagFreeSpaces[diskId].size())) {
+        return diskTagFreeSpaces[diskId][tag];
+    }
+    return -1;
 }
 
 std::pair<int, int> DiskManager::findConsecutiveFreeUnits(int diskId, int size) const {
@@ -76,6 +141,69 @@ std::pair<int, int> DiskManager::findConsecutiveFreeUnits(int diskId, int size, 
     return {-1, 0};  // 未找到连续空间
 }
 
+std::vector<std::pair<int, int>> DiskManager::allocateOnDisk(int diskId, int size, int tag) {
+#ifndef NDEBUG
+    if (diskId < 1 || diskId > n || size <= 0 || size > v) {
+        return {}; // 参数错误，返回空向量
+    }
+#endif
+    // std::cerr << "allocateOnDisk diskId: " << diskId << " size: " << size << " tag: " << tag << std::endl;
+    
+    // 检查指定标签的预分配空间是否足够
+    int tagFreeSpace = getTagFreeSpace(diskId, tag);
+    if (tagFreeSpace < size) {
+        return {}; // 标签预分配空间不足
+    }
+    
+    // 在标签预分配区间内寻找连续空闲单元
+    std::vector<std::pair<int, int>> result;
+    int remaining = size;
+    
+    // 遍历该磁盘上的标签区间
+    for (const auto& [startUnit, endUnit, rangeTag] : diskTagRanges[diskId]) {
+        if (rangeTag != tag) continue; // 跳过其他标签的区间
+        
+        // 在该区间内寻找连续空闲单元
+        auto [startPos, consecutiveSize] = findConsecutiveFreeUnits(diskId, remaining, startUnit, endUnit);
+        
+        if (startPos != -1) {
+            // 找到连续空间，分配它
+            int objectIndex = 0;
+            for (int i = startPos; i < startPos + consecutiveSize; i++) {
+                diskUnits[diskId][i] = objectIndex++;  // 设为已分配但未读取
+            }
+            
+            // 更新标签空闲空间
+            updateTagFreeSpace(diskId, tag, -consecutiveSize);
+            
+            // 创建并返回分配的块
+            result.push_back({startPos, consecutiveSize});
+            remaining -= consecutiveSize;
+            
+            if (remaining <= 0) {
+                break; // 已分配所有需要的空间
+            }
+        }
+    }
+    
+    if (remaining <= 0) {
+        // 更新磁盘空闲空间信息
+        diskFreeSpaces[diskId] -= size;
+        return result;  // 成功分配所有需要的空间
+    } else {
+        // 分配失败，恢复已分配的单元
+        for (const auto& block : result) {
+            for (int i = block.first; i < block.first + block.second; i++) {
+                diskUnits[diskId][i] = -1;  // 恢复为空闲
+            }
+        }
+        updateTagFreeSpace(diskId, tag, size);
+
+        return {};  // 返回空向量表示失败
+    }
+}
+
+// 重载的allocateOnDisk方法，不指定标签（默认在所有空间中分配）
 std::vector<std::pair<int, int>> DiskManager::allocateOnDisk(int diskId, int size) {
 #ifndef NDEBUG
     if (diskId < 1 || diskId > n || size <= 0 || size > v) {
@@ -83,7 +211,7 @@ std::vector<std::pair<int, int>> DiskManager::allocateOnDisk(int diskId, int siz
     }
 #endif
     
-    // 检查可用空间
+    // 检查整个磁盘的可用空间是否足够
     int freeSpace = getFreeSpaceOnDisk(diskId);
     if (freeSpace < size) {
         return {}; // 空间不足
@@ -102,6 +230,17 @@ std::vector<std::pair<int, int>> DiskManager::allocateOnDisk(int diskId, int siz
         // 更新磁盘空闲空间信息
         diskFreeSpaces[diskId] -= size;
         
+        // 更新受影响的标签的空闲空间
+        for (int i = startPos; i < startPos + size; i++) {
+            for (const auto& [startUnit, endUnit, tag] : diskTagRanges[diskId]) {
+                if (i >= startUnit && i <= endUnit) {
+                    // 找到了所属标签，更新该标签的空闲空间
+                    updateTagFreeSpace(diskId, tag, -1);
+                    break;
+                }
+            }
+        }
+        
         // 创建并返回分配的块
         std::vector<std::pair<int, int>> result;
         result.push_back({startPos, size});
@@ -113,6 +252,8 @@ std::vector<std::pair<int, int>> DiskManager::allocateOnDisk(int diskId, int siz
         
         // 逐个分配空闲单元
         int objectIndex = 0;
+        std::map<int, int> tagAllocatedUnits; // 记录每个标签分配的单元数量
+        
         for (int i = 1; i <= v && remaining > 0; i++) {
             if (diskUnits[diskId][i] == -1) {  // 空闲单元
                 int startBlock = i;
@@ -120,6 +261,15 @@ std::vector<std::pair<int, int>> DiskManager::allocateOnDisk(int diskId, int siz
                 
                 // 寻找连续的空闲单元
                 while (i <= v && diskUnits[diskId][i] == -1 && blockSize < remaining) {
+                    // 查找该位置属于哪个标签
+                    for (const auto& [startUnit, endUnit, tag] : diskTagRanges[diskId]) {
+                        if (i >= startUnit && i <= endUnit) {
+                            // 找到了所属标签，更新该标签的分配计数
+                            tagAllocatedUnits[tag]++;
+                            break;
+                        }
+                    }
+                    
                     diskUnits[diskId][i] = objectIndex++;  // 设为已分配
                     blockSize++;
                     i++;
@@ -134,84 +284,12 @@ std::vector<std::pair<int, int>> DiskManager::allocateOnDisk(int diskId, int siz
         if (remaining <= 0) {
             // 更新磁盘空闲空间信息
             diskFreeSpaces[diskId] -= size;
-            return result;  // 成功分配所有需要的空间
-        } else {
-            // 分配失败，恢复已分配的单元
-            for (const auto& block : result) {
-                for (int i = block.first; i < block.first + block.second; i++) {
-                    diskUnits[diskId][i] = -1;  // 恢复为空闲
-                }
+            
+            // 更新各标签的空闲空间
+            for (const auto& [tag, count] : tagAllocatedUnits) {
+                updateTagFreeSpace(diskId, tag, -count);
             }
-            return {};  // 返回空向量表示失败
-        }
-    }
-}
-
-// 在指定区间内分配存储空间
-std::vector<std::pair<int, int>> DiskManager::allocateOnDisk(int diskId, int size, int startUnit, int endUnit) {
-#ifndef NDEBUG
-    if (diskId < 1 || diskId > n || size <= 0 || startUnit < 1 || endUnit > v || startUnit > endUnit) {
-        return {}; // 参数错误，返回空向量
-    }
-#endif
-    
-    // 检查区间内可用空间是否足够
-    int freeSpace = 0;
-    for (int i = startUnit; i <= endUnit; i++) {
-        if (diskUnits[diskId][i] == -1) {
-            freeSpace++;
-        }
-    }
-    
-    if (freeSpace < size) {
-        return {}; // 区间内空间不足
-    }
-    
-    // 在指定区间内寻找连续空闲单元
-    auto [startPos, consecutiveSize] = findConsecutiveFreeUnits(diskId, size, startUnit, endUnit);
-    
-    if (startPos != -1) {
-        // 找到连续空间，分配它
-        int objectIndex = 0;
-        for (int i = startPos; i < startPos + size; i++) {
-            diskUnits[diskId][i] = objectIndex++;  // 设为已分配但未读取
-        }
-        
-        // 更新磁盘空闲空间信息
-        diskFreeSpaces[diskId] -= size;
-        
-        // 创建并返回分配的块
-        std::vector<std::pair<int, int>> result;
-        result.push_back({startPos, size});
-        return result;
-    } else {
-        // 没有找到足够大的连续空间，尝试在区间内碎片化分配
-        std::vector<std::pair<int, int>> result;
-        int remaining = size;
-        
-        // 逐个分配区间内的空闲单元
-        int objectIndex = 0;
-        for (int i = startUnit; i <= endUnit && remaining > 0; i++) {
-            if (diskUnits[diskId][i] == -1) {  // 空闲单元
-                int startBlock = i;
-                int blockSize = 0;
-                
-                // 寻找连续的空闲单元
-                while (i <= endUnit && diskUnits[diskId][i] == -1 && blockSize < remaining) {
-                    diskUnits[diskId][i] = objectIndex++;  // 设为已分配
-                    blockSize++;
-                    i++;
-                }
-                
-                result.push_back({startBlock, blockSize});
-                remaining -= blockSize;
-                i--;  // 回退一步，因为循环会自增
-            }
-        }
-        
-        if (remaining <= 0) {
-            // 更新磁盘空闲空间信息
-            diskFreeSpaces[diskId] -= size;
+            
             return result;  // 成功分配所有需要的空间
         } else {
             // 分配失败，恢复已分配的单元
@@ -233,6 +311,7 @@ bool DiskManager::freeOnDisk(int diskId, const std::vector<std::pair<int, int>>&
 #endif
     
     int freedUnits = 0;
+    std::map<int, int> tagFreedUnits; // 记录每个标签释放的单元数量
     
     // 释放指定的块
     for (const auto& block : blocks) {
@@ -250,12 +329,26 @@ bool DiskManager::freeOnDisk(int diskId, const std::vector<std::pair<int, int>>&
             if (diskUnits[diskId][i] != -1) {
                 diskUnits[diskId][i] = -1;  // 设为空闲
                 freedUnits++;
+                
+                // 查找该位置属于哪个标签
+                for (const auto& [startUnit, endUnit, tag] : diskTagRanges[diskId]) {
+                    if (i >= startUnit && i <= endUnit) {
+                        // 找到了所属标签，更新该标签的释放计数
+                        tagFreedUnits[tag]++;
+                        break;
+                    }
+                }
             }
         }
     }
     
     // 更新磁盘空闲空间信息
     diskFreeSpaces[diskId] += freedUnits;
+    
+    // 更新各标签的空闲空间
+    for (const auto& [tag, count] : tagFreedUnits) {
+        updateTagFreeSpace(diskId, tag, count);
+    }
     
     return true;
 }
