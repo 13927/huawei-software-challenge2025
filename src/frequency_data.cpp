@@ -318,12 +318,13 @@ void FrequencyData::allocateTagsToDiskUnits() {
     std::sort(tagPriorityPairs.begin(), tagPriorityPairs.end(), 
               [](const auto& a, const auto& b) { return a.second > b.second; });
     
-    // 为每个标签确定分配的磁盘数量
+    // 为每个标签确定分配的磁盘数量 - 修改为只分配到3个磁盘
     std::vector<int> tagDiskCount(tagCount + 1, 0);
     
-    // 将所有标签的磁盘分配数量设置为diskCount
+    // 将每个标签的磁盘分配数量设置为3，而不是diskCount
+    const int DISKS_PER_TAG = 3; // 每个标签分配的磁盘数量
     for (int tag = 1; tag <= tagCount; tag++) {
-        tagDiskCount[tag] = diskCount;
+        tagDiskCount[tag] = std::min(DISKS_PER_TAG, diskCount); // 防止磁盘总数小于3
     }
     
     #ifndef NDEBUG
@@ -479,24 +480,26 @@ void FrequencyData::allocateTagsToDiskUnits() {
                 }
             }
             
-            // 如果可以，优先分配到新磁盘
-            if (!alreadyAllocated || tagToDiskMap[tag].size() < tagDiskCount[tag]) {
-                int unitsToAllocate = std::min(tagUnitsToBePlaced[tag], availableSpace);
-                
-                tagDiskAllocation[tag][disk] += unitsToAllocate;
-                diskAllocated[disk] += unitsToAllocate;
-                tagUnitsToBePlaced[tag] -= unitsToAllocate;
-                
-                if (!alreadyAllocated) {
-                    tagToDiskMap[tag].push_back(disk);
-                }
-                
-                #ifndef NDEBUG
-                if (diskDebugFile.is_open()) {
-                    diskDebugFile << "  额外分配到磁盘 " << disk << ": " << unitsToAllocate << " 单元\n";
-                }
-                #endif
+            // 如果当前标签分配的磁盘数量已达目标，则跳过未分配的磁盘
+            if (!alreadyAllocated && tagToDiskMap[tag].size() >= tagDiskCount[tag]) {
+                continue;
             }
+            
+            int unitsToAllocate = std::min(tagUnitsToBePlaced[tag], availableSpace);
+            
+            tagDiskAllocation[tag][disk] += unitsToAllocate;
+            diskAllocated[disk] += unitsToAllocate;
+            tagUnitsToBePlaced[tag] -= unitsToAllocate;
+            
+            if (!alreadyAllocated) {
+                tagToDiskMap[tag].push_back(disk);
+            }
+            
+            #ifndef NDEBUG
+            if (diskDebugFile.is_open()) {
+                diskDebugFile << "  额外分配到磁盘 " << disk << ": " << unitsToAllocate << " 单元\n";
+            }
+            #endif
         }
     }
     
@@ -592,6 +595,7 @@ void FrequencyData::allocateTagsToDiskUnits() {
             }
         }
     }
+    
     #ifndef NDEBUG
     // 将分配结果写入文件
     std::ofstream outFile("disk_allocation.txt");
