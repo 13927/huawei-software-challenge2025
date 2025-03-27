@@ -3,6 +3,7 @@
 #include <iostream>
 #include "constants.h" 
 #include <algorithm>
+#include <fstream>
 
 ReadRequestManager::ReadRequestManager(ObjectManager& objMgr, DiskHeadManager& diskMgr)
     : objectManager(objMgr), diskHeadManager(diskMgr) {
@@ -167,7 +168,7 @@ bool ReadRequestManager::allocateReadRequests() {
                 // 选择要使用的副本
                 int selectedReplicaIndex = -1;
                 
-                if (loadDifference > 0.4) {
+                if (loadDifference > 0.55) {
                     // 负载差距大于40%，选择负载最小的磁盘
                     int minLoadIndex = -1;
                     int currentMinLoad = INT_MAX;
@@ -307,6 +308,16 @@ void ReadRequestManager::updateAllRequestsStatus(const std::unordered_map<int, s
 void ReadRequestManager::executeTimeSlice() {
     // 分配读取请求
     allocateReadRequests();
+
+    #ifndef NDEBUG
+    // 将当前时间片每个磁盘磁头的待读取单元数量写入txt
+    std::ofstream file("disk_head_load.txt", std::ios::app);
+    file << "TIMESTAMP " << currentTimeSlice << std::endl;
+    for (int i = 1; i <= diskHeadManager.getDiskCount(); i++) {
+        file << diskHeadManager.getHeadReadLoad(i) << std::endl;
+    }
+    file.close();
+    #endif
     
     // 重置磁盘磁头管理器时间片，生成读取任务
     diskHeadManager.resetTimeSlice();
