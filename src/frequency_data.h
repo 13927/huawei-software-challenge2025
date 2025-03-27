@@ -15,9 +15,9 @@
 // 存储和分析频率数据的类
 class FrequencyData {
 private:
-    std::vector<std::vector<int>> fre_del;  // 删除操作频率
-    std::vector<std::vector<int>> fre_write; // 写入操作频率
-    std::vector<std::vector<int>> fre_read;  // 读取操作频率
+    std::vector<std::vector<int>> fre_del;  // 删除操作对象大小之和
+    std::vector<std::vector<int>> fre_write; // 写入操作对象大小之和
+    std::vector<std::vector<int>> fre_read;  // 读取操作对象大小之和
     
     int tagCount;               // 标签数量
     int sliceCount;             // 分片数量
