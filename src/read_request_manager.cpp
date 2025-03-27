@@ -168,7 +168,7 @@ bool ReadRequestManager::allocateReadRequests() {
                 // 选择要使用的副本
                 int selectedReplicaIndex = -1;
                 
-                if (loadDifference > 0.55) {
+                if (loadDifference > 0.6) {
                     // 负载差距大于40%，选择负载最小的磁盘
                     int minLoadIndex = -1;
                     int currentMinLoad = INT_MAX;
