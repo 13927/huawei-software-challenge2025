@@ -63,28 +63,59 @@ void FrequencyData::calculatePeakStorageNeeds() {
 }
 
 void FrequencyData::calculateTagCorrelation() {
-    tagCorrelation.resize(tagCount + 1, std::vector<double>(tagCount + 1, 0.0));
+    // 计算每个标签在每个时间片的读取概率
+    readRatios.resize(tagCount + 1, std::vector<double>(sliceCount + 1, 0.0));
     
-    for (int i = 1; i <= tagCount; i++) {
-        for (int j = i + 1; j <= tagCount; j++) {
-            double correlation = 0.0;
-            double totalReads = 0.0;
-            
-            // 计算两个标签的读取相关性
-            for (int slice = 1; slice <= sliceCount; slice++) {
-                correlation += std::min(fre_read[i][slice], fre_read[j][slice]);
-                totalReads += std::max(fre_read[i][slice], fre_read[j][slice]);
-            }
-            
-            // 归一化相关性
-            if (totalReads > 0) {
-                correlation = correlation / totalReads;
-            }
-            
-            tagCorrelation[i][j] = correlation;
-            tagCorrelation[j][i] = correlation;
+    for (int tag = 1; tag <= tagCount; tag++) {
+        int currentStorage = 0;
+        for (int slice = 1; slice <= sliceCount; slice++) {
+            currentStorage += fre_write[tag][slice];
+            currentStorage -= fre_del[tag][slice];
+
+            readRatios[tag][slice] = static_cast<double>(fre_read[tag][slice]) / currentStorage;
+
         }
     }
+
+    #ifndef NDEBUG
+    //输出readRatios到cerr
+    std::cerr << "=== 标签读取概率 ===" << std::endl;
+    for (int tag = 1; tag <= tagCount; tag++) {
+        std::cerr << "标签 " << tag << " 的读取概率:" << std::endl;
+        for (int slice = 1; slice <= sliceCount; slice++) {
+            std::cerr << "时间片 " << slice << ": " << readRatios[tag][slice] << std::endl;
+        }
+        std::cerr << std::endl;
+    }
+    #endif
+        tagCorrelation.resize(tagCount + 1, std::vector<double>(tagCount + 1, 0.0));
+
+    for (int i = 1; i <= tagCount; i++) {
+        for (int j = i + 1; j <= tagCount; j++) {
+            double dotProduct = 0.0, normX = 0.0, normY = 0.0;
+
+            for (int slice = 1; slice <= sliceCount; slice++) {
+                double readProbX = readRatios[i][slice];
+                double readProbY = readRatios[j][slice];
+
+                if (std::isfinite(readProbX) && std::isfinite(readProbY)) {
+                    dotProduct += readProbX * readProbY;
+                    normX += readProbX * readProbX;
+                    normY += readProbY * readProbY;
+                }
+            }
+
+            // 计算余弦相似度
+            if (normX > 0 && normY > 0) {
+                tagCorrelation[i][j] = dotProduct / (sqrt(normX) * sqrt(normY));
+            } else {
+                tagCorrelation[i][j] = 0.0;
+            }
+
+            tagCorrelation[j][i] = tagCorrelation[i][j];
+        }
+    }
+
 }
 
 void FrequencyData::calculateTagPriorities() {
@@ -284,6 +315,31 @@ void FrequencyData::analyzeAndPreallocate() {
         outFile << "\n";
     }
     outFile << "\n";
+
+    // 为每个标签写入相关性排序
+    outFile << "\n=== 每个标签的相关性排序 ===\n";
+    for (int i = 1; i <= tagCount; i++) {
+        outFile << "标签 " << i << " 的相关性排序:\n";
+        
+        // 收集当前标签与其他标签的相关性
+        std::vector<std::pair<int, double>> correlations;
+        for (int j = 1; j <= tagCount; j++) {
+            if (i != j) {
+                correlations.push_back({j, tagCorrelation[i][j]});
+            }
+        }
+        
+        // 按相关性从高到低排序
+        std::sort(correlations.begin(), correlations.end(),
+                 [](const auto& a, const auto& b) { return a.second > b.second; });
+        
+        // 输出排序结果
+        for (const auto& [tag, corr] : correlations) {
+            outFile << "  与标签 " << tag << ": " 
+                   << std::fixed << std::setprecision(3) << corr << "\n";
+        }
+        outFile << "\n";
+    }
     
     outFile.close();
     #endif
