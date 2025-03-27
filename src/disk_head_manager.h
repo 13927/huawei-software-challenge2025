@@ -124,6 +124,15 @@ public:
     
     // 获取DiskManager引用
     const DiskManager& getDiskManager() const { return diskManager; }
+
+    // 获取磁头未读取的单元数
+    int getHeadReadLoad(int diskId) const { return diskReadUnits[diskId].size(); }
+
+    // 检查指定存储单元周围存在要读取的单元数量
+    int checkSurroundingReadUnits(int diskId, int unitPos, int length, int checkRange) const;
+
+    // 获取最近的读取单元距离
+    int getDistanceOfNearestReadUnit(int diskId, int startPos, int length) const;
 };
 
 #endif // DISK_HEAD_MANAGER_H 
