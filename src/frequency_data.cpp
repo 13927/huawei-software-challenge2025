@@ -127,127 +127,12 @@ void FrequencyData::calculateTagCorrelation() {
 
 }
 
-void FrequencyData::calculateTagPriorities() {
-    tagPriorities.clear();
-
-    std::vector<double> tagTotalReads(tagCount + 1, 0.0);
-    std::vector<double> tagPeakReads(tagCount + 1, 0.0);
-    std::vector<double> tagVariances(tagCount + 1, 0.0);
-    
-    #ifndef NDEBUG
-    // 创建一个调试输出文件
-    std::ofstream debugFile("tag_priorities_debug.txt");
-    if (!debugFile.is_open()) {
-        std::cerr << "无法创建调试文件" << std::endl;
-    } else {
-        debugFile << "=== 标签优先级调试信息 ===\n\n";
-        debugFile << "标签数量: " << tagCount << "\n";
-        debugFile << "切片数量: " << sliceCount << "\n\n";
-    }
-    #endif
-    
-    for (int tag = 1; tag <= tagCount; tag++) {
-        // 计算总读取量
-        double totalReads = 0.0;
-        double maxReadsInSlice = 0.0;
-        double readVariance = 0.0; // 读取量的方差（表示读取的波动性）
-        
-        #ifndef NDEBUG
-        if (debugFile.is_open()) {
-            debugFile << "标签 " << tag << " 读取频率详情:\n";
-            debugFile << "  切片\t读取量\n";
-        }
-        #endif
-        
-        // 计算平均读取量和最大读取量
-        for (int slice = 1; slice <= sliceCount; slice++) {
-            totalReads += fre_read[tag][slice];
-            maxReadsInSlice = std::max(maxReadsInSlice, static_cast<double>(fre_read[tag][slice]));
-            
-            #ifndef NDEBUG
-            if (debugFile.is_open()) {
-                debugFile << "  " << slice << "\t" << fre_read[tag][slice] << "\n";
-            }
-            #endif
-        }
-        double avgReads = totalReads / sliceCount;
-        
-        // 计算读取量的方差（表示读取的波动性）
-        for (int slice = 1; slice <= sliceCount; slice++) {
-            double diff = fre_read[tag][slice] - avgReads;
-            readVariance += diff * diff;
-        }
-        readVariance /= sliceCount;
-
-        // 存储数据用于归一化
-        tagTotalReads[tag] = totalReads;
-        tagPeakReads[tag] = maxReadsInSlice;
-        tagVariances[tag] = readVariance;
-        
-        #ifndef NDEBUG
-        if (debugFile.is_open()) {
-            debugFile << "  总读取量: " << totalReads << "\n";
-            debugFile << "  平均读取量: " << avgReads << "\n";
-            debugFile << "  最大读取量: " << maxReadsInSlice << "\n";
-            debugFile << "  读取方差: " << readVariance << "\n\n";
-        }
-        #endif
-    }
-
-    // 计算最大值用于归一化
-    double maxTotalReads = *std::max_element(tagTotalReads.begin(), tagTotalReads.end());
-    double maxPeakReads = *std::max_element(tagPeakReads.begin(), tagPeakReads.end());
-    double maxVariance = *std::max_element(tagVariances.begin(), tagVariances.end());
-    
-    #ifndef NDEBUG
-    if (debugFile.is_open()) {
-        debugFile << "归一化参数:\n";
-        debugFile << "  最大总读取量: " << maxTotalReads << "\n";
-        debugFile << "  最大峰值读取量: " << maxPeakReads << "\n";
-        debugFile << "  最大方差: " << maxVariance << "\n\n";
-        
-        debugFile << "标签优先级计算:\n";
-        debugFile << "标签\t总读取\t峰值读取\t稳定性\t优先级\n";
-    }
-    #endif
-    
-    for (int tag = 1; tag <= tagCount; tag++) {
-        // 归一化
-        double totalReadsScore = maxTotalReads > 0 ? (tagTotalReads[tag] / maxTotalReads) : 0;
-        double peakReadsScore = maxPeakReads > 0 ? (tagPeakReads[tag] / maxPeakReads) : 0;
-        double stabilityScore = maxVariance > 0 ? (1.0 - (tagVariances[tag] / maxVariance)) : 1.0;
-
-        // 计算优先级
-        double priority = 0.45 * totalReadsScore + 
-                          0.35 * peakReadsScore + 
-                          0.2 * stabilityScore;
-
-        priority = std::max(0.0, std::min(1.0, priority)); // 确保在 [0,1]
-        
-        #ifndef NDEBUG
-        if (debugFile.is_open()) {
-            debugFile << tag << "\t" 
-                     << totalReadsScore << "\t" 
-                     << peakReadsScore << "\t" 
-                     << stabilityScore << "\t" 
-                     << priority << "\n";
-        }
-        #endif
-
-        tagPriorities.push_back(std::make_pair(tag, priority));
-    }
-
-}
-
 void FrequencyData::analyzeAndPreallocate() {
     // 计算峰值存储需求
     calculatePeakStorageNeeds();
     
     // 计算标签相关性
     calculateTagCorrelation();
-    
-    // 计算标签优先级
-    calculateTagPriorities();
     
     // 计算总峰值存储需求
     int totalPeakStorage = std::accumulate(peakStorageNeeds.begin(), peakStorageNeeds.end(), 0);
@@ -259,17 +144,8 @@ void FrequencyData::analyzeAndPreallocate() {
         double storageRatio = static_cast<double>(peakStorageNeeds[tag]) / totalPeakStorage;
         int baseUnits = static_cast<int>(storageRatio * (diskCount * unitsPerDisk));
         
-        // 根据读取优先级增加额外单元
-        double readPriority = 0.0;
-        for (const auto& pair : tagPriorities) {
-            if (pair.first == tag) {
-                readPriority = pair.second;
-                break;
-            }
-        }
-        int extraUnits = static_cast<int>(baseUnits * readPriority * 0.5); // 读取优先级高的标签获得更多单元
-        
-        tagTotalUnits[tag] = baseUnits + extraUnits;
+        // 直接使用基础单元作为分配单元数，不再考虑读取优先级
+        tagTotalUnits[tag] = baseUnits;
     }
     
     // 确保总分配不超过系统容量
@@ -302,16 +178,6 @@ void FrequencyData::analyzeAndPreallocate() {
     for (int tag = 1; tag <= tagCount; tag++) {
         outFile << "标签 " << tag << ":\n";
         outFile << "  峰值存储需求: " << peakStorageNeeds[tag] << " 单元\n";
-        outFile << "  读取优先级: ";
-        
-        // 找到对应标签的优先级
-        for (const auto& pair : tagPriorities) {
-            if (pair.first == tag) {
-                outFile << pair.second << "\n";
-                break;
-            }
-        }
-        
         outFile << "  分配总单元数: " << tagTotalUnits[tag] << " 单元\n\n";
     }
     
@@ -371,17 +237,21 @@ void FrequencyData::allocateTagsToDiskUnits() {
     // 每个标签分配到的磁盘列表
     std::vector<std::vector<int>> tagToDiskMap(tagCount + 1);
     
-    // 按读取优先级从高到低排序标签
-    std::vector<int> sortedTags;
-    std::vector<std::pair<int, double>> tagPriorityPairs;
-    for (const auto& tagPriority : tagPriorities) {
-        sortedTags.push_back(tagPriority.first);
-        tagPriorityPairs.push_back(tagPriority);
+    // 按照峰值存储需求从大到小排序标签
+    std::vector<std::pair<int, int>> sortedTagsByStorage;
+    for (int tag = 1; tag <= tagCount; tag++) {
+        sortedTagsByStorage.push_back({tag, peakStorageNeeds[tag]});
     }
     
-    // 根据优先级排序
-    std::sort(tagPriorityPairs.begin(), tagPriorityPairs.end(), 
+    // 根据峰值存储需求排序
+    std::sort(sortedTagsByStorage.begin(), sortedTagsByStorage.end(), 
               [](const auto& a, const auto& b) { return a.second > b.second; });
+              
+    // 提取排序后的标签ID列表
+    std::vector<int> sortedTags;
+    for (const auto& pair : sortedTagsByStorage) {
+        sortedTags.push_back(pair.first);
+    }
     
     // 为每个标签确定分配的磁盘数量 - 修改为只分配到3个磁盘
     std::vector<int> tagDiskCount(tagCount + 1, 0);
@@ -400,9 +270,9 @@ void FrequencyData::allocateTagsToDiskUnits() {
         diskDebugFile << "磁盘数量: " << diskCount << "\n";
         diskDebugFile << "每个磁盘单元数: " << unitsPerDisk << "\n\n";
         
-        diskDebugFile << "标签优先级排序:\n";
-        for (const auto& [tag, priority] : tagPriorityPairs) {
-            diskDebugFile << "标签 " << tag << ": 优先级=" << priority << "\n";
+        diskDebugFile << "标签存储需求排序:\n";
+        for (const auto& [tag, storage] : sortedTagsByStorage) {
+            diskDebugFile << "标签 " << tag << ": 存储需求=" << storage << "\n";
         }
         diskDebugFile << "\n";
     }

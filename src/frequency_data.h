@@ -31,7 +31,6 @@ private:
     std::vector<std::vector<double>> tagCorrelation;  // 标签间的读取相关性
 
     
-    std::vector<std::pair<int, double>> tagPriorities;      // 标签优先级（根据读写频率计算） <tag, priority>
     std::vector<int> tagTotalUnits;           // 每个标签应分配的总存储单元数
 
     // 存储最终分配结果的数据结构
@@ -50,7 +49,6 @@ private:
     // 新增私有方法
     void calculatePeakStorageNeeds();         // 计算峰值存储需求
     void calculateTagCorrelation();           // 计算标签间的读取相关性
-    void calculateTagPriorities();           // 计算标签优先级
     void calculateStorageNeeds();             // 计算存储需求
     void allocateTagsToDiskUnits();
 
