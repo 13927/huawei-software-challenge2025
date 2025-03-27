@@ -231,11 +231,13 @@ void handle_delete_events(ReadRequestManager& requestManager) {
         // 打印取消的请求ID到文件
         #ifndef NDEBUG
         std::ofstream logFile("cancelledReqs.txt", std::ios::app);
-        if (logFile.is_open()) {
-            for (int req_id : cancelledReqs) {
-                logFile << req_id << std::endl;
-            }
-        }
+        logFile << "TIMESTAMP " << currentTimeSlice << std::endl;
+        logFile << "CANCELLED REQUESTS: " << cancelledReqs.size() << std::endl;
+        // if (logFile.is_open()) {
+        //     for (int req_id : cancelledReqs) {
+        //         logFile << req_id << std::endl;
+        //     }
+        // }
         #endif
         // 将取消的请求ID添加到总列表中
         abortedRequests.insert(abortedRequests.end(), cancelledReqs.begin(), cancelledReqs.end());

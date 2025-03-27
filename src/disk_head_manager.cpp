@@ -1,6 +1,7 @@
 #include "disk_head_manager.h"
 #include "disk_manager.h"
 #include <algorithm>
+#include <climits>
 #include <iostream>
 #include <sstream>
 
@@ -514,4 +515,39 @@ std::unordered_map<int, std::vector<int>> DiskHeadManager::executeTasks() {
     }
     
     return readUnitsInThisSlice;
+}
+
+int DiskHeadManager::checkSurroundingReadUnits(int diskId, int unitPos, int length, int checkRange) const {
+    int count = 0;
+    for (int i = unitPos - checkRange; i < unitPos + length + checkRange; i++) {
+        int realPos = ((i - 1) % unitCount) + 1;
+        if (needsRead(diskId, realPos)) {
+            count++;
+        }
+    }
+    return count;
+}
+
+int DiskHeadManager::getDistanceOfNearestReadUnit(int diskId, int startPos, int length) const {
+    // 如果没有待读取的单元，返回-1
+    if (diskReadUnits[diskId].empty()) {
+        return -1;
+    }
+
+    // 使用 lower_bound 寻找大于等于当前位置的第一个单元
+    auto it = diskReadUnits[diskId].lower_bound((startPos+length-2) % unitCount + 1);
+
+    // 如果找到大于等于当前位置的单元
+    int behind = INT_MAX;
+    if (it != diskReadUnits[diskId].end()) {
+        behind = *it - (startPos+length-1);
+    }
+
+    int front = INT_MAX;
+    auto it2 = diskReadUnits[diskId].upper_bound((startPos-1) % unitCount + 1);
+    if (it2 != diskReadUnits[diskId].begin()) {
+        front = (startPos - *(--it2));
+    }
+
+    return std::min(behind, front) == INT_MAX ? -1 : std::min(behind, front);
 }
