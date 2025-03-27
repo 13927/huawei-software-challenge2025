@@ -150,6 +150,49 @@ void timestamp_action()
     std::cout.flush();
 }
 
+
+// 处理删除事件
+void handle_delete_events(ReadRequestManager& requestManager) {
+    int n_delete;
+    std::cin >> n_delete;
+    
+    // 收集所有被取消的请求ID
+    std::vector<int> abortedRequests;
+    
+    // 处理每个要删除的对象
+    for (int i = 0; i < n_delete; i++) {
+        int obj_id;
+        std::cin >> obj_id;
+        
+        // 调用ReadRequestManager取消与对象相关的所有请求
+        std::vector<int> cancelledReqs = requestManager.cancelRequestsByObjectId(obj_id);
+        // 打印取消的请求ID到文件
+        #ifndef NDEBUG
+        std::ofstream logFile("cancelledReqs.txt", std::ios::app);
+        logFile << "TIMESTAMP " << currentTimeSlice << std::endl;
+        logFile << "CANCELLED REQUESTS: " << cancelledReqs.size() << std::endl;
+        // if (logFile.is_open()) {
+        //     for (int req_id : cancelledReqs) {
+        //         logFile << req_id << std::endl;
+        //     }
+        // }
+        #endif
+        // 将取消的请求ID添加到总列表中
+        abortedRequests.insert(abortedRequests.end(), cancelledReqs.begin(), cancelledReqs.end());
+    }
+    
+    // 输出被取消的请求数量
+    std::cout << abortedRequests.size() << std::endl;
+    
+    // 输出每个被取消的请求ID
+    for (int req_id : abortedRequests) {
+        std::cout << req_id << std::endl;
+    }
+    
+    // 刷新输出缓冲区
+    std::cout.flush();
+}
+
 // 处理写入事件
 void handle_write_events(ObjectManager& objectManager) {
     int n_write;
@@ -207,48 +250,6 @@ void handle_write_events(ObjectManager& objectManager) {
                 }
             }
         }
-    }
-    
-    // 刷新输出缓冲区
-    std::cout.flush();
-}
-
-// 处理删除事件
-void handle_delete_events(ReadRequestManager& requestManager) {
-    int n_delete;
-    std::cin >> n_delete;
-    
-    // 收集所有被取消的请求ID
-    std::vector<int> abortedRequests;
-    
-    // 处理每个要删除的对象
-    for (int i = 0; i < n_delete; i++) {
-        int obj_id;
-        std::cin >> obj_id;
-        
-        // 调用ReadRequestManager取消与对象相关的所有请求
-        std::vector<int> cancelledReqs = requestManager.cancelRequestsByObjectId(obj_id);
-        // 打印取消的请求ID到文件
-        #ifndef NDEBUG
-        std::ofstream logFile("cancelledReqs.txt", std::ios::app);
-        logFile << "TIMESTAMP " << currentTimeSlice << std::endl;
-        logFile << "CANCELLED REQUESTS: " << cancelledReqs.size() << std::endl;
-        // if (logFile.is_open()) {
-        //     for (int req_id : cancelledReqs) {
-        //         logFile << req_id << std::endl;
-        //     }
-        // }
-        #endif
-        // 将取消的请求ID添加到总列表中
-        abortedRequests.insert(abortedRequests.end(), cancelledReqs.begin(), cancelledReqs.end());
-    }
-    
-    // 输出被取消的请求数量
-    std::cout << abortedRequests.size() << std::endl;
-    
-    // 输出每个被取消的请求ID
-    for (int req_id : abortedRequests) {
-        std::cout << req_id << std::endl;
     }
     
     // 刷新输出缓冲区
