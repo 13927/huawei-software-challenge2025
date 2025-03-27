@@ -88,31 +88,40 @@ void FrequencyData::calculateTagCorrelation() {
         std::cerr << std::endl;
     }
     #endif
-        tagCorrelation.resize(tagCount + 1, std::vector<double>(tagCount + 1, 0.0));
 
+    tagCorrelation.resize(tagCount + 1, std::vector<double>(tagCount + 1, 0.0));
+
+    // 预计算 normX
+    std::vector<double> norms(tagCount + 1, 0.0);
+    for (int i = 1; i <= tagCount; i++) {
+        for (int slice = 1; slice <= sliceCount; slice++) {
+            double readProbX = readRatios[i][slice];
+            if (std::isfinite(readProbX)) {
+                norms[i] += readProbX * readProbX;
+            }
+        }
+        norms[i] = sqrt(norms[i]); // 直接预计算 sqrt()
+    }
+
+    // 计算余弦相似度
     for (int i = 1; i <= tagCount; i++) {
         for (int j = i + 1; j <= tagCount; j++) {
-            double dotProduct = 0.0, normX = 0.0, normY = 0.0;
+            if (norms[i] == 0 || norms[j] == 0) { 
+                tagCorrelation[i][j] = tagCorrelation[j][i] = 0.0;
+                continue; // 避免除以 0
+            }
 
+            double dotProduct = 0.0;
             for (int slice = 1; slice <= sliceCount; slice++) {
                 double readProbX = readRatios[i][slice];
                 double readProbY = readRatios[j][slice];
 
                 if (std::isfinite(readProbX) && std::isfinite(readProbY)) {
                     dotProduct += readProbX * readProbY;
-                    normX += readProbX * readProbX;
-                    normY += readProbY * readProbY;
                 }
             }
 
-            // 计算余弦相似度
-            if (normX > 0 && normY > 0) {
-                tagCorrelation[i][j] = dotProduct / (sqrt(normX) * sqrt(normY));
-            } else {
-                tagCorrelation[i][j] = 0.0;
-            }
-
-            tagCorrelation[j][i] = tagCorrelation[i][j];
+            tagCorrelation[i][j] = tagCorrelation[j][i] = dotProduct / (norms[i] * norms[j]); 
         }
     }
 
