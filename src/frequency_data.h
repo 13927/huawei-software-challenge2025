@@ -29,6 +29,7 @@ private:
     std::vector<int> peakStorageNeeds;        // 每个标签的峰值存储需求
     std::vector<std::vector<double>> readRatios;
     std::vector<std::vector<double>> tagCorrelation;  // 标签间的读取相关性
+    std::map<int, std::vector<std::pair<int, double>>> sortedTagCorrelation; // 按相关性从大到小排序的标签 <tag_id, [(related_tag_id, correlation), ...]>
 
     
     std::vector<int> tagTotalUnits;           // 每个标签应分配的总存储单元数
@@ -49,6 +50,7 @@ private:
     // 新增私有方法
     void calculatePeakStorageNeeds();         // 计算峰值存储需求
     void calculateTagCorrelation();           // 计算标签间的读取相关性
+    void sortTagCorrelation();                // 排序标签相关性
     void calculateStorageNeeds();             // 计算存储需求
     void allocateTagsToDiskUnits();
 
@@ -91,6 +93,12 @@ public:
 
     // 获取标签总数
     int getTagCount() const { return tagCount; }
+    
+    // 获取与指定标签相关性最高的标签列表
+    std::vector<std::pair<int, double>> getRelatedTags(int tag, int limit = -1) const;
+    
+    // 获取两个标签之间的相关性
+    double getTagCorrelation(int tag1, int tag2) const;
 };
 
 #endif // FREQUENCY_DATA_H 

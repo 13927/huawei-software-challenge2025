@@ -124,7 +124,47 @@ void FrequencyData::calculateTagCorrelation() {
             tagCorrelation[i][j] = tagCorrelation[j][i] = dotProduct / (norms[i] * norms[j]); 
         }
     }
+    
+    // 对标签相关性排序
+    sortTagCorrelation();
+}
 
+void FrequencyData::sortTagCorrelation() {
+    // 清空原有排序结果
+    sortedTagCorrelation.clear();
+    
+    // 为每个标签创建按相关性排序的相关标签列表
+    for (int i = 1; i <= tagCount; i++) {
+        std::vector<std::pair<int, double>> correlations;
+        
+        // 收集当前标签与所有其他标签的相关性
+        for (int j = 1; j <= tagCount; j++) {
+            if (i != j) {  // 排除自身
+                correlations.push_back({j, tagCorrelation[i][j]});
+            }
+        }
+        
+        // 按相关性从高到低排序
+        std::sort(correlations.begin(), correlations.end(),
+                 [](const auto& a, const auto& b) { return a.second > b.second; });
+        
+        // 存储排序结果
+        sortedTagCorrelation[i] = correlations;
+    }
+    
+    #ifndef NDEBUG
+    // 输出排序后的相关性
+    std::cerr << "=== 排序后的标签相关性 ===" << std::endl;
+    for (int tag = 1; tag <= tagCount; tag++) {
+        std::cerr << "标签 " << tag << " 的相关标签排序:" << std::endl;
+        const auto& correlations = sortedTagCorrelation[tag];
+        for (size_t i = 0; i < correlations.size(); i++) {
+            std::cerr << "  - 标签 " << correlations[i].first 
+                    << ": 相关性=" << correlations[i].second << std::endl;
+        }
+        std::cerr << std::endl;
+    }
+    #endif
 }
 
 void FrequencyData::analyzeAndPreallocate() {
@@ -196,17 +236,8 @@ void FrequencyData::analyzeAndPreallocate() {
     for (int i = 1; i <= tagCount; i++) {
         outFile << "标签 " << i << " 的相关性排序:\n";
         
-        // 收集当前标签与其他标签的相关性
-        std::vector<std::pair<int, double>> correlations;
-        for (int j = 1; j <= tagCount; j++) {
-            if (i != j) {
-                correlations.push_back({j, tagCorrelation[i][j]});
-            }
-        }
-        
-        // 按相关性从高到低排序
-        std::sort(correlations.begin(), correlations.end(),
-                 [](const auto& a, const auto& b) { return a.second > b.second; });
+        // 使用已排序的相关性数据
+        const auto& correlations = sortedTagCorrelation[i];
         
         // 输出排序结果
         for (const auto& [tag, corr] : correlations) {
@@ -452,7 +483,7 @@ void FrequencyData::allocateTagsToDiskUnits() {
         
         // 如果磁盘上有多个标签，根据相关性安排它们的顺序
         if (tagsOnDisk.size() > 1) {
-            // 构建标签之间的相关性矩阵
+            // 使用排序后的标签相关性来构建标签之间的相似度矩阵
             std::vector<std::vector<double>> similarityMatrix(tagsOnDisk.size(), 
                                                            std::vector<double>(tagsOnDisk.size(), 0.0));
             
@@ -460,6 +491,7 @@ void FrequencyData::allocateTagsToDiskUnits() {
                 for (size_t j = i+1; j < tagsOnDisk.size(); ++j) {
                     int tag1 = tagsOnDisk[i];
                     int tag2 = tagsOnDisk[j];
+                    // 直接从tagCorrelation获取相关性
                     similarityMatrix[i][j] = tagCorrelation[tag1][tag2];
                     similarityMatrix[j][i] = similarityMatrix[i][j];
                 }
@@ -701,4 +733,29 @@ int FrequencyData::getTagTotalAllocatedUnits(int tag) const {
         }
     }
     return total;
+}
+
+std::vector<std::pair<int, double>> FrequencyData::getRelatedTags(int tag, int limit) const {
+    std::vector<std::pair<int, double>> result;
+    
+    auto it = sortedTagCorrelation.find(tag);
+    if (it != sortedTagCorrelation.end()) {
+        const auto& correlations = it->second;
+        if (limit <= 0 || limit > static_cast<int>(correlations.size())) {
+            // 返回所有相关标签
+            return correlations;
+        } else {
+            // 返回限制数量的相关标签
+            return std::vector<std::pair<int, double>>(correlations.begin(), correlations.begin() + limit);
+        }
+    }
+    
+    return result;
+}
+
+double FrequencyData::getTagCorrelation(int tag1, int tag2) const {
+    if (tag1 >= 1 && tag1 <= tagCount && tag2 >= 1 && tag2 <= tagCount) {
+        return tagCorrelation[tag1][tag2];
+    }
+    return 0.0;
 } 
