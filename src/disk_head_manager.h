@@ -4,12 +4,9 @@
 #include <vector>
 #include <queue>
 #include <unordered_map>
-#include <unordered_set>
 #include <set>
-#include <cmath>
 #include <string>
 #include "disk_manager.h"
-#include "constants.h"
 
 // 磁头动作类型
 enum HeadActionType {
