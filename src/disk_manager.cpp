@@ -26,7 +26,7 @@ DiskManager::DiskManager(int diskNum, int unitNum, FrequencyData& freqData)
     
     // 初始化预分配空间
     initializePreallocatedSpace();
-
+    #ifndef NDEBUG
     // 向文件中写入初始化预分配空间信息，不覆盖
     std::ofstream outFile("preallocated_space.txt", std::ios::app);
     if (outFile.is_open()) {
@@ -39,7 +39,7 @@ DiskManager::DiskManager(int diskNum, int unitNum, FrequencyData& freqData)
             outFile << std::endl;
         }
     }
-
+    #endif
 }
 
 DiskManager::~DiskManager() {
