@@ -362,30 +362,34 @@ void FrequencyData::allocateTagsToDiskUnits() {
         std::vector<std::pair<int, double>> diskCorrelationScore;
         for (int disk = 1; disk <= diskCount; ++disk) {
             double correlationScore = 0.0;
-            int tagsOnDiskCount = 0;
+            int totalAllocatedUnits = 0;
             
-            // 计算该磁盘上已有标签与当前标签的相关性之和
+            // 计算该磁盘上已有标签与当前标签的相关性之和，加权计算
             for (int otherTag = 1; otherTag <= tagCount; ++otherTag) {
                 if (otherTag == tag) continue;
                 
                 if (tagDiskAllocation[otherTag][disk] > 0) {
-                    correlationScore += getTagCorrelation(tag, otherTag);
-                    tagsOnDiskCount++;
+                    // 使用相关性乘以已分配单元数作为权重
+                    correlationScore += getTagCorrelation(tag, otherTag) * tagDiskAllocation[otherTag][disk];
+                    totalAllocatedUnits += tagDiskAllocation[otherTag][disk];
                 }
-            }
-            
-            // 如果磁盘上有标签，计算平均相关性；否则，设置较低的相关性分数以优先选择空磁盘
-            double finalScore = 0.0;
-            if (tagsOnDiskCount > 0) {
-                finalScore = correlationScore / tagsOnDiskCount;
             }
             
             // 计算可用空间
             int availableSpace = unitsPerDisk - diskAllocated[disk];
             
-            // 将相关性分数和可用空间结合起来（负相关性作为评分，使相关性低的磁盘得分更高）
-            // 同时考虑磁盘的可用空间，空间越大评分越高
-            diskCorrelationScore.push_back({disk, -finalScore + (static_cast<double>(availableSpace) / unitsPerDisk)});
+            // 评分公式：
+            // 1. 负相关性分数（相关性越低越好）
+            // 2. 可用空间比例（可用空间越大越好）
+            // 3. 如果磁盘未分配任何标签，给予额外奖励分数
+            double finalScore = -correlationScore; // 负相关性，相关性越低得分越高
+            finalScore += (static_cast<double>(availableSpace) / unitsPerDisk) * 2.0; // 可用空间因子
+            
+            if (totalAllocatedUnits == 0) {
+                finalScore += 1.0; // 空磁盘奖励
+            }
+            
+            diskCorrelationScore.push_back({disk, finalScore});
         }
         
         // 按评分从高到低排序
