@@ -4,11 +4,7 @@
 #include <vector>
 #include <utility>
 #include <map>
-#include <algorithm>
-#include <iostream>
-#include <cmath>
 #include "object_manager.h"
-#include "constants.h"
 #include <tuple>
 
 

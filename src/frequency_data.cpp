@@ -1,7 +1,5 @@
 #include "frequency_data.h"
 #include <algorithm>
-#include <fstream>
-#include <iomanip>
 #include <numeric>
 
 FrequencyData::FrequencyData() : tagCount(0), sliceCount(0), totalTimeSlices(0), 
@@ -196,8 +194,13 @@ void FrequencyData::analyzeAndPreallocate() {
             tagTotalUnits[tag] = static_cast<int>(tagTotalUnits[tag] * scaleFactor);
         }
     }
+
+    //平均分配，得分略降低 65.4297
+    // for (int tag = 1; tag <= 16; tag++)
+    //     tagTotalUnits[tag] = 1;
     
     #ifndef NDEBUG
+    {
     // 将分析结果写入文件
     std::ofstream outFile("storage_analysis.txt");
     if (!outFile.is_open()) {
@@ -248,6 +251,7 @@ void FrequencyData::analyzeAndPreallocate() {
     }
     
     outFile.close();
+    }
     #endif
     
     // 分配标签到磁盘单元
@@ -290,7 +294,7 @@ void FrequencyData::allocateTagsToDiskUnits() {
     // 将每个标签的磁盘分配数量设置为3，而不是diskCount
     const int DISKS_PER_TAG = 3; // 每个标签分配的磁盘数量
     for (int tag = 1; tag <= tagCount; tag++) {
-        tagDiskCount[tag] = std::min(DISKS_PER_TAG, diskCount); // 防止磁盘总数小于3
+        tagDiskCount[tag] = std::min(DISKS_PER_TAG, diskCount); 
     }
     
     #ifndef NDEBUG
@@ -312,11 +316,11 @@ void FrequencyData::allocateTagsToDiskUnits() {
     // 每个标签每个磁盘分配的单元数
     std::vector<std::vector<int>> tagDiskAllocation(tagCount + 1, std::vector<int>(diskCount + 1, 0));
     
-    // 计算需要分配的总单元数（系统总容量的90%）
+    // 计算总系统容量，使用100%
     int totalSystemUnits = diskCount * unitsPerDisk;
-    int totalUnitsToAllocate = static_cast<int>(totalSystemUnits * 0.9);
+    int totalUnitsToAllocate = totalSystemUnits; // 使用全部容量
     
-    // 调整每个标签的分配量，使总和为系统容量的90%
+    // 调整每个标签的分配量，使总和为系统总容量
     int totalTagUnits = std::accumulate(tagTotalUnits.begin(), tagTotalUnits.end(), 0);
     if (totalTagUnits > 0) {
         double scaleFactor = static_cast<double>(totalUnitsToAllocate) / totalTagUnits;
@@ -345,7 +349,7 @@ void FrequencyData::allocateTagsToDiskUnits() {
     }
     #endif
     
-    // 第一步：根据计算的最佳磁盘数分配每个标签
+    // 第一步：根据相关性为每个标签选择最适合的磁盘
     for (int tag : sortedTags) {
         if (tagUnitsToBePlaced[tag] <= 0 || tagDiskCount[tag] <= 0) continue;
         
@@ -354,21 +358,44 @@ void FrequencyData::allocateTagsToDiskUnits() {
         int unitsPerTargetDisk = tagUnitsToBePlaced[tag] / targetDisksCount;
         int remainingUnits = tagUnitsToBePlaced[tag] % targetDisksCount;
         
-        // 找出最空闲的N个磁盘
-        std::vector<int> bestDisks;
-        std::vector<std::pair<int, int>> diskLoad; // <disk_id, allocated>
-        
-        for (int disk = 1; disk <= diskCount; ++disk) {  // 磁盘ID从1开始
-            diskLoad.push_back({disk, diskAllocated[disk]});
+        // 计算每个磁盘与已分配标签的相关性得分
+        std::vector<std::pair<int, double>> diskCorrelationScore;
+        for (int disk = 1; disk <= diskCount; ++disk) {
+            double correlationScore = 0.0;
+            int tagsOnDiskCount = 0;
+            
+            // 计算该磁盘上已有标签与当前标签的相关性之和
+            for (int otherTag = 1; otherTag <= tagCount; ++otherTag) {
+                if (otherTag == tag) continue;
+                
+                if (tagDiskAllocation[otherTag][disk] > 0) {
+                    correlationScore += getTagCorrelation(tag, otherTag);
+                    tagsOnDiskCount++;
+                }
+            }
+            
+            // 如果磁盘上有标签，计算平均相关性；否则，设置较低的相关性分数以优先选择空磁盘
+            double finalScore = 0.0;
+            if (tagsOnDiskCount > 0) {
+                finalScore = correlationScore / tagsOnDiskCount;
+            }
+            
+            // 计算可用空间
+            int availableSpace = unitsPerDisk - diskAllocated[disk];
+            
+            // 将相关性分数和可用空间结合起来（负相关性作为评分，使相关性低的磁盘得分更高）
+            // 同时考虑磁盘的可用空间，空间越大评分越高
+            diskCorrelationScore.push_back({disk, -finalScore + (static_cast<double>(availableSpace) / unitsPerDisk)});
         }
         
-        // 按已分配单元数排序
-        std::sort(diskLoad.begin(), diskLoad.end(), 
-                 [](const auto& a, const auto& b) { return a.second < b.second; });
+        // 按评分从高到低排序
+        std::sort(diskCorrelationScore.begin(), diskCorrelationScore.end(),
+                 [](const auto& a, const auto& b) { return a.second > b.second; });
         
-        // 选择最空闲的targetDisksCount个磁盘
-        for (int i = 0; i < targetDisksCount && i < diskLoad.size(); ++i) {
-            int disk = diskLoad[i].first;
+        // 从评分最高的磁盘中选择targetDisksCount个
+        std::vector<int> bestDisks;
+        for (size_t i = 0; i < diskCorrelationScore.size() && bestDisks.size() < targetDisksCount; ++i) {
+            int disk = diskCorrelationScore[i].first;
             int availableUnits = unitsPerDisk - diskAllocated[disk];
             
             if (availableUnits > 0) {
@@ -381,6 +408,13 @@ void FrequencyData::allocateTagsToDiskUnits() {
             diskDebugFile << "标签 " << tag << " 选择的磁盘: ";
             for (int disk : bestDisks) {
                 diskDebugFile << disk << " ";
+            }
+            diskDebugFile << "\n";
+            
+            // 输出每个磁盘的相关性评分
+            diskDebugFile << "  磁盘评分情况: ";
+            for (const auto& [disk, score] : diskCorrelationScore) {
+                diskDebugFile << disk << "(" << score << ") ";
             }
             diskDebugFile << "\n";
         }
@@ -631,51 +665,101 @@ void FrequencyData::allocateTagsToDiskUnits() {
     }
     #endif
     
-    // 将未分配的系统容量分配给虚拟标签 tag 0
-    std::vector<std::tuple<int, int, int>> tag0Allocations;
-    
+    // 确保所有磁盘空间都被充分利用
+    int totalAllocatedSpace = 0;
     for (int disk = 1; disk <= diskCount; ++disk) {
-        // 获取该磁盘上已分配的单元区间，按起始位置排序
-        std::vector<std::pair<int, int>> allocatedRanges; // <start, end>
-        for (const auto& [start, end, tag] : diskUnitRanges[disk]) {
-            allocatedRanges.push_back({start, end});
-        }
-        
-        std::sort(allocatedRanges.begin(), allocatedRanges.end());
-        
-        // 找出该磁盘上未分配的区间
-        std::vector<std::pair<int, int>> freeRanges; // <start, end>
-        int currentPos = 1;
-        
-        for (const auto& [start, end] : allocatedRanges) {
-            if (currentPos < start) {
-                // 发现一个未分配区间
-                freeRanges.push_back({currentPos, start - 1});
-            }
-            currentPos = end + 1;
-        }
-        
-        // 检查最后一个可能的未分配区间
-        if (currentPos <= unitsPerDisk) {
-            freeRanges.push_back({currentPos, unitsPerDisk});
-        }
-        
-        // 将未分配区间分配给 tag 0
-        for (const auto& [start, end] : freeRanges) {
-            if (start <= end) {
-                // 添加到磁盘分配结果
-                DiskRange range = {start, end, 0}; // tag 0
-                diskAllocationResult[disk].push_back(range);
-                
-                // 添加到标签分配结果
-                tag0Allocations.push_back(std::make_tuple(disk, start, end));
-            }
-        }
+        totalAllocatedSpace += diskAllocated[disk];
     }
     
-    // 将 tag 0 的分配结果写入 tagAllocationResult
-    if (!tag0Allocations.empty()) {
-        tagAllocationResult[0] = tag0Allocations;
+    int remainingSpace = totalSystemUnits - totalAllocatedSpace;
+    if (remainingSpace > 0) {
+        #ifndef NDEBUG
+        std::cerr << "系统还有 " << remainingSpace << " 单元未分配，将进行额外分配" << std::endl;
+        #endif
+        
+        // 将剩余空间分配给各个标签，优先分配给存储需求高的标签
+        for (const auto& [tag, storage] : sortedTagsByStorage) {
+            if (remainingSpace <= 0) break;
+            
+            // 找出该标签已分配的磁盘
+            std::vector<int> usedDisks = tagToDiskMap[tag];
+            
+            // 找出所有有剩余空间的磁盘
+            std::vector<std::pair<int, int>> availableDisks; // <disk_id, available>
+            for (int disk = 1; disk <= diskCount; ++disk) {
+                int available = unitsPerDisk - diskAllocated[disk];
+                if (available > 0) {
+                    availableDisks.push_back({disk, available});
+                }
+            }
+            
+            if (!availableDisks.empty()) {
+                // 按可用空间降序排序
+                std::sort(availableDisks.begin(), availableDisks.end(),
+                        [](const auto& a, const auto& b) { return a.second > b.second; });
+                
+                // 先尝试分配给已使用的磁盘
+                for (int disk : usedDisks) {
+                    if (remainingSpace <= 0) break;
+                    
+                    int available = unitsPerDisk - diskAllocated[disk];
+                    if (available > 0) {
+                        int toAllocate = std::min(remainingSpace, available);
+                        tagDiskAllocation[tag][disk] += toAllocate;
+                        diskAllocated[disk] += toAllocate;
+                        remainingSpace -= toAllocate;
+                        
+                        // 更新磁盘分配结果
+                        bool found = false;
+                        for (auto& range : diskAllocationResult[disk]) {
+                            if (range.tag == tag) {
+                                range.endUnit += toAllocate;
+                                found = true;
+                                break;
+                            }
+                        }
+                        
+                        if (!found) {
+                            // 创建新的分配范围
+                            int startUnit = 1;
+                            for (const auto& range : diskAllocationResult[disk]) {
+                                startUnit = std::max(startUnit, range.endUnit + 1);
+                            }
+                            DiskRange range = {startUnit, startUnit + toAllocate - 1, tag};
+                            diskAllocationResult[disk].push_back(range);
+                            tagAllocationResult[tag].push_back(std::make_tuple(disk, startUnit, startUnit + toAllocate - 1));
+                        }
+                    }
+                }
+                
+                // 如果还有剩余空间，分配给其他磁盘
+                if (remainingSpace > 0 && tagToDiskMap[tag].size() < diskCount) {
+                    for (const auto& [disk, available] : availableDisks) {
+                        if (remainingSpace <= 0) break;
+                        
+                        // 检查是否已分配给该磁盘
+                        if (std::find(usedDisks.begin(), usedDisks.end(), disk) != usedDisks.end()) {
+                            continue; // 已分配过，跳过
+                        }
+                        
+                        int toAllocate = std::min(remainingSpace, available);
+                        tagDiskAllocation[tag][disk] += toAllocate;
+                        diskAllocated[disk] += toAllocate;
+                        tagToDiskMap[tag].push_back(disk);
+                        remainingSpace -= toAllocate;
+                        
+                        // 创建新的分配范围
+                        int startUnit = 1;
+                        for (const auto& range : diskAllocationResult[disk]) {
+                            startUnit = std::max(startUnit, range.endUnit + 1);
+                        }
+                        DiskRange range = {startUnit, startUnit + toAllocate - 1, tag};
+                        diskAllocationResult[disk].push_back(range);
+                        tagAllocationResult[tag].push_back(std::make_tuple(disk, startUnit, startUnit + toAllocate - 1));
+                    }
+                }
+            }
+        }
     }
 }
 

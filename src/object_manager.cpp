@@ -1,8 +1,10 @@
 #include "object_manager.h"
 #include "constants.h"
+#include "frequency_data.h"
 #include <algorithm>
 #include <cstdlib>
 #include <ctime>
+#include <utility>
 
 // Object类构造函数
 Object::Object(int id, int size, int tag) 
@@ -108,39 +110,53 @@ bool ObjectManager::allocateReplicas(Object& obj) {
                 break;
             }
         }
-        
-        // 2. 如果在标签预分配空间中分配失败，尝试在tag 0预分配空间中分配
+
+        // 如果在标签预分配空间中分配失败，尝试在相关标签的预分配空间中分配
         if (selectedDiskId == -1 && tag != 0) {
-            std::vector<std::pair<int, int>> tag0OrderedDisks; // <diskId, freeSpace>
-            for (int diskId = 1; diskId <= diskManager.getDiskCount(); diskId++) {
-                // 排除已经用于当前对象副本的磁盘
-                if (std::find(usedDisks.begin(), usedDisks.end(), diskId) == usedDisks.end()) {
-                    int tag0FreeSpace = diskManager.getTagFreeSpace(diskId, 0);
-                    if (tag0FreeSpace >= size) {
-                        tag0OrderedDisks.push_back({diskId, tag0FreeSpace});
+            // std::cerr << "timestamp: " << currentTimeSlice << std::endl;
+            // 获取与当前标签相关性排序的标签列表
+            std::vector<std::pair<int, double>> relatedTags = freqData.getRelatedTags(tag);
+            
+            // 按照相关性大小依次尝试在其他tag预分配空间上分配
+            for (auto [relatedTag, doublenum] : relatedTags) {
+                // 跳过当前标签，因为已经尝试过了
+                if (relatedTag == tag) continue;
+                
+                std::vector<std::pair<int, int>> relatedTagOrderedDisks; // <diskId, freeSpace>
+                for (int diskId = 1; diskId <= diskManager.getDiskCount(); diskId++) {
+                    // 排除已经用于当前对象副本的磁盘
+                    if (std::find(usedDisks.begin(), usedDisks.end(), diskId) == usedDisks.end()) {
+                        int relatedTagFreeSpace = diskManager.getTagFreeSpace(diskId, relatedTag);
+                        if (relatedTagFreeSpace >= size) {
+                            relatedTagOrderedDisks.push_back({diskId, relatedTagFreeSpace});
+                        }
                     }
                 }
-            }
-            
-            // 按tag 0空闲空间从大到小排序
-            std::sort(tag0OrderedDisks.begin(), tag0OrderedDisks.end(), 
-                      [](const auto& a, const auto& b) { return a.second > b.second; });
-            
-            // 尝试在tag 0预分配空间足够的磁盘上分配
-            for (const auto& [diskId, freeSpace] : tag0OrderedDisks) {
-                std::vector<std::pair<int, int>> allocatedBlocks = diskManager.allocateOnDisk(diskId, size, 0);
-                if (!allocatedBlocks.empty()) {
-                    // 分配成功
-                    obj.setReplica(i, diskId, allocatedBlocks);
-                    usedDisks.push_back(diskId);
-                    selectedDiskId = diskId;
-                    break;
+                
+                // 按相关标签空闲空间从大到小排序
+                std::sort(relatedTagOrderedDisks.begin(), relatedTagOrderedDisks.end(), 
+                          [](const auto& a, const auto& b) { return a.second > b.second; });
+                
+                // 尝试在相关标签预分配空间足够的磁盘上分配
+                for (const auto& [diskId, freeSpace] : relatedTagOrderedDisks) {
+                    std::vector<std::pair<int, int>> allocatedBlocks = diskManager.allocateOnDisk(diskId, size, relatedTag);
+                    if (!allocatedBlocks.empty()) {
+                        // 分配成功
+                        obj.setReplica(i, diskId, allocatedBlocks);
+                        usedDisks.push_back(diskId);
+                        selectedDiskId = diskId;
+                        break;
+                    }
                 }
+                
+                // 如果在当前相关标签上分配成功，则跳出循环
+                if (selectedDiskId != -1) break;
             }
         }
         
-        // 3. 如果在标签预分配空间和tag 0预分配空间中都分配失败，则在负载最小的磁盘上分配
+        // 在负载最小的磁盘上分配
         if (selectedDiskId == -1) {
+            // std::cerr << "timestamp: " << currentTimeSlice << std::endl;
             // std::cerr << "allocateReplicas selectedDiskId == -1" << std::endl;
             // 获取负载最小的磁盘
             std::vector<int> leastLoadedDisks = diskManager.getLeastLoadedDisks(diskManager.getDiskCount());
