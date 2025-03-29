@@ -31,6 +31,7 @@ bool ReadRequestManager::addReadRequest(int requestId, int objectId) {
     // 创建新的读取请求
     ReadRequest request(requestId, objectId);
     request.status = REQUEST_PENDING;
+    request.startTimeSlice = currentTimeSlice;
 
     // 更新总剩余单元数
     request.totalRemainingUnits = obj->getSize();
@@ -343,6 +344,7 @@ void ReadRequestManager::executeTimeSlice() {
 
     // 清空当前时间片完成的请求记录
     resetTimeSlice();
+
 }
 
 std::vector<int> ReadRequestManager::getCompletedRequests() const {
@@ -466,3 +468,48 @@ std::vector<int> ReadRequestManager::cancelRequestsByObjectId(int objectId) {
 int ReadRequestManager::getPendingRequestCount() const {
     return pendingRequests.size();
 } 
+
+void ReadRequestManager::checkRequestsTimeout() {
+
+    // 检查所有更新中的请求，删除超时的请求
+    std::unordered_set<int> timeoutRequests;
+    for (const auto& processingRequest : processingRequests) {
+        // 如果请求正在处理中，检查是否超时
+        auto requestIt = requests.find(processingRequest);
+        ReadRequest& request = requestIt->second;
+        // 如果请求的时间片和当前时间片差距大于等于105，则标记为超时
+        if (currentTimeSlice - request.startTimeSlice >= 90) {
+            timeoutRequests.insert(processingRequest);
+        }
+        
+    }
+    
+    // 删除所有超时的请求的磁盘读取
+    for (int requestId : timeoutRequests) {
+        auto requestIt = requests.find(requestId);
+        if (requestIt != requests.end()) {
+            // 获取对象ID，以便从objectToRequests中移除引用
+            int objectId = requestIt->second.objectId;     
+            // 从objectToRequests中移除请求引用
+            auto objectIt = objectToRequests.find(objectId);
+            if (objectIt != objectToRequests.end() && 
+                std::all_of(objectIt->second.begin(), objectIt->second.end(), 
+                           [&timeoutRequests](int reqId) { return timeoutRequests.count(reqId) > 0; })) {
+                
+                for (const auto& diskUnits : requestIt->second.remainingUnits) {
+                    int diskId = diskUnits.first;
+                    const std::set<int>& units = diskUnits.second;
+                    
+                    // 取消磁盘头管理器中的所有读取请求
+                    for (int unitPos : units) {
+                        diskHeadManager.cancelReadRequest(diskId, unitPos);
+                        
+                    }
+                }
+
+            }
+
+        }
+    }
+}
+

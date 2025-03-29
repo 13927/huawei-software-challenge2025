@@ -1,6 +1,7 @@
 #include "frequency_data.h"
 #include <algorithm>
 #include <numeric>
+#include <cmath>
 
 FrequencyData::FrequencyData() : tagCount(0), sliceCount(0), totalTimeSlices(0), 
                  diskCount(0), unitsPerDisk(0), maxTokensPerSlice(0) {}
@@ -277,7 +278,6 @@ void FrequencyData::allocateTagsToDiskUnits() {
     for (int tag = 1; tag <= tagCount; tag++) {
         sortedTagsByStorage.push_back({tag, peakStorageNeeds[tag]});
     }
-    
     // 根据峰值存储需求排序
     std::sort(sortedTagsByStorage.begin(), sortedTagsByStorage.end(), 
               [](const auto& a, const auto& b) { return a.second > b.second; });

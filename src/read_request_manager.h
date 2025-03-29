@@ -28,6 +28,7 @@ struct ReadRequest {
     RequestStatus status;                           // 请求状态
     std::unordered_map<int, std::set<int>> remainingUnits; // 每个磁盘上需要读取的单元 (磁盘ID -> 单元位置集合)
     int totalRemainingUnits;                        // 总剩余需要读取的单元数
+    int startTimeSlice;                              // 请求开始时间片
     
     ReadRequest() : requestId(0), objectId(0), status(REQUEST_PENDING), totalRemainingUnits(0) {}
     ReadRequest(int reqId, int objId) : requestId(reqId), objectId(objId), status(REQUEST_PENDING), totalRemainingUnits(0) {}
@@ -52,6 +53,8 @@ public:
     
     // 添加读取请求
     bool addReadRequest(int requestId, int objectId);
+
+
     
     // 分配读取请求（将等待的请求变为处理中）
     bool allocateReadRequests();
@@ -61,6 +64,9 @@ public:
     
     // 取消某个对象的所有读取请求
     std::vector<int> cancelRequestsByObjectId(int objectId);
+
+    // 检查所有更新中的请求，删除超时的请求
+    void checkRequestsTimeout();
     
     // 执行一个时间片
     void executeTimeSlice();
