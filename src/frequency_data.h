@@ -6,6 +6,7 @@
 #include <map>
 #include "object_manager.h"
 #include <tuple>
+#include <cmath>
 
 
 // 存储和分析频率数据的类
