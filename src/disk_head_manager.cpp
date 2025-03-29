@@ -330,10 +330,7 @@ void DiskHeadManager::generateTasksForDisk(int diskId) {
         
         // 更新可用令牌和虚拟当前位置
         availableTokens -= executedPass;
-        currentPos = (currentPos + executedPass) % unitCount;
-        if (currentPos == 0) {
-            currentPos = unitCount; // 修正为正确的单元位置，环形结构中0对应unitCount
-        }
+        currentPos = (currentPos + executedPass - 1) % unitCount + 1;
         headStates[diskId].lastAction = ACTION_PASS;
         headStates[diskId].lastTokenCost = 1;
         headStates[diskId].currentPosition = currentPos;
