@@ -4,6 +4,7 @@
 #include <climits>
 #include <iostream>
 #include <sstream>
+#include <cmath>
 
 DiskHeadManager::DiskHeadManager(int disks, int units, int maxTokens, DiskManager& dm) 
     : diskCount(disks), unitCount(units), maxTokensPerSlice(maxTokens), diskManager(dm) {

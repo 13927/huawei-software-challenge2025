@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <utility>
+#include <cmath>
 
 // Object类构造函数
 Object::Object(int id, int size, int tag) 
