@@ -3,6 +3,7 @@
 #include <iostream>
 #include "constants.h" 
 #include <algorithm>
+#include <cmath>
 
 ReadRequestManager::ReadRequestManager(ObjectManager& objMgr, DiskHeadManager& diskMgr)
     : objectManager(objMgr), diskHeadManager(diskMgr) {

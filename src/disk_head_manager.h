@@ -61,6 +61,9 @@ private:
     
     // 计算到目标单元需要的Pass次数
     int calculatePassCount(int from, int to);
+
+    // 检查指定磁盘上指定位置是否存在高读取密度
+    bool isReadDensityHigh(int diskId, int currentPos, int distance);
     
 public:
     DiskHeadManager(int disks, int units, int maxTokens, DiskManager& dm);

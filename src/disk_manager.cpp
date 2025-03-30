@@ -7,6 +7,7 @@
 #include <map>
 #include <iostream>
 #include <fstream>
+#include <cmath>
 
 DiskManager::DiskManager(int diskNum, int unitNum, FrequencyData& freqData) 
     : n(diskNum), v(unitNum), frequencyData(freqData) {
@@ -174,7 +175,7 @@ std::vector<std::pair<int, int>> DiskManager::allocateOnDisk(int diskId, int siz
             }
             
             // 更新标签空闲空间
-            updateTagFreeSpace(diskId, tag, -consecutiveSize);
+            // updateTagFreeSpace(diskId, tag, -consecutiveSize);
             
             // 创建并返回分配的块
             result.push_back({startPos, consecutiveSize});
@@ -184,11 +185,27 @@ std::vector<std::pair<int, int>> DiskManager::allocateOnDisk(int diskId, int siz
                 break; // 已分配所有需要的空间
             }
         }
+        // else{
+        //     while(remaining > 0){
+        //         int objectIndex = 0;
+        //         auto [startPos, consecutiveSize] = findConsecutiveFreeUnits(diskId, 1, startUnit, endUnit);
+        //         if(startPos != -1){
+        //             diskUnits[diskId][startPos] = objectIndex++;
+        //             updateTagFreeSpace(diskId, tag, -consecutiveSize);
+        //             remaining--;
+                    
+        //         }else {
+        //             std::cerr << "碎片化分配失败,!!!" << std::endl;
+        //         }
+
+        //     }
+        // }
     }
     
     if (remaining <= 0) {
         // 更新磁盘空闲空间信息
         diskFreeSpaces[diskId] -= size;
+        updateTagFreeSpace(diskId, tag, -size);
         return result;  // 成功分配所有需要的空间
     } else {
         // 分配失败，恢复已分配的单元
@@ -197,7 +214,7 @@ std::vector<std::pair<int, int>> DiskManager::allocateOnDisk(int diskId, int siz
                 diskUnits[diskId][i] = -1;  // 恢复为空闲
             }
         }
-        updateTagFreeSpace(diskId, tag, size);
+        // updateTagFreeSpace(diskId, tag, size);
 
         return {};  // 返回空向量表示失败
     }
@@ -293,6 +310,7 @@ std::vector<std::pair<int, int>> DiskManager::allocateOnDisk(int diskId, int siz
             return result;  // 成功分配所有需要的空间
         } else {
             // 分配失败，恢复已分配的单元
+            std::cerr << "碎片化分配失败" << std::endl;
             for (const auto& block : result) {
                 for (int i = block.first; i < block.first + block.second; i++) {
                     diskUnits[diskId][i] = -1;  // 恢复为空闲

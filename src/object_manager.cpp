@@ -6,7 +6,7 @@
 #include <ctime>
 #include <utility>
 #include <cmath>
-
+#include <iostream>
 // Object类构造函数
 Object::Object(int id, int size, int tag) 
     : objectId(id), objectSize(size), objectTag(tag) {
@@ -157,8 +157,8 @@ bool ObjectManager::allocateReplicas(Object& obj) {
         
         // 在负载最小的磁盘上分配
         if (selectedDiskId == -1) {
-            // std::cerr << "timestamp: " << currentTimeSlice << std::endl;
-            // std::cerr << "allocateReplicas selectedDiskId == -1" << std::endl;
+            std::cerr << "timestamp: " << currentTimeSlice << std::endl;
+            std::cerr << "allocateReplicas selectedDiskId == -1" << std::endl;
             // 获取负载最小的磁盘
             std::vector<int> leastLoadedDisks = diskManager.getLeastLoadedDisks(diskManager.getDiskCount());
             

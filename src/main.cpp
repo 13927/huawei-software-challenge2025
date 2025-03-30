@@ -11,6 +11,9 @@
 #include "read_request_manager.h"
 #include "constants.h"
 #include "frequency_data.h"
+#include <fstream>
+#include <cmath>
+#include <iomanip>
 
 // 全局变量
 int T, M, N, V, G; // 总时间片数、标签数、磁盘数、每个磁盘的存储单元数、每个磁头每个时间片最多消耗的令牌数

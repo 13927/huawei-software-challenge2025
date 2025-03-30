@@ -251,7 +251,7 @@ void DiskHeadManager::generateTasksForDisk(int diskId) {
             }
             
             // 比较总损失，选择最优方案
-            if (totalReadPlanCost < totalPassPlanCost) {
+            if (totalReadPlanCost < totalPassPlanCost || isReadDensityHigh(diskId, currentPos, 6)) {
                 // 使用连续READ方案，但仅执行当前时间片可完成的部分
                 if (possibleReadSteps > 0) {
                     for (int i = 0; i < possibleReadSteps; i++) {
@@ -548,4 +548,25 @@ int DiskHeadManager::getDistanceOfNearestReadUnit(int diskId, int startPos, int 
     }
 
     return std::min(behind, front) == INT_MAX ? -1 : std::min(behind, front);
+}
+
+bool DiskHeadManager::isReadDensityHigh(int diskId, int currentPos, int distance) {
+    // 如果没有待读取的单元，返回false
+    if (diskReadUnits[diskId].empty() || distance <= 0) {
+        return false;
+    }
+    
+    int readCount = 0;
+    int totalUnits = distance;
+    
+    // 计算从currentPos开始的distance范围内需要读取的单元数量
+    for (int i = 0; i < distance; i++) {
+        int pos = ((currentPos + i - 1) % unitCount) + 1;
+        if (needsRead(diskId, pos)) {
+            readCount++;
+        }
+    }
+    
+    // 如果读取密度超过50%，返回true
+    return (static_cast<double>(readCount) / totalUnits) >= 0.49;
 }

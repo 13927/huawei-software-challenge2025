@@ -53,8 +53,6 @@ public:
     
     // 添加读取请求
     bool addReadRequest(int requestId, int objectId);
-
-
     
     // 分配读取请求（将等待的请求变为处理中）
     bool allocateReadRequests();
