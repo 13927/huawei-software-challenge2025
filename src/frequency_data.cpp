@@ -264,7 +264,7 @@ void FrequencyData::allocateTagsToDiskUnits() {
     diskAllocationResult.clear();
     tagAllocationResult.clear();
     
-    // 每个磁盘已分配的单元数（注意：磁盘ID从1开始，但内部数组从0开始）
+    // 每个磁盘已分配的单元数
     std::vector<int> diskAllocated(diskCount + 1, 0);
     
     // 每个磁盘分配的标签和对应的单元数

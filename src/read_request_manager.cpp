@@ -470,6 +470,7 @@ int ReadRequestManager::getPendingRequestCount() const {
     return pendingRequests.size();
 } 
 
+//负分
 void ReadRequestManager::checkRequestsTimeout() {
 
     // 检查所有更新中的请求，删除超时的请求

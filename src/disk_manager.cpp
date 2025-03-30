@@ -173,9 +173,7 @@ std::vector<std::pair<int, int>> DiskManager::allocateOnDisk(int diskId, int siz
             for (int i = startPos; i < startPos + consecutiveSize; i++) {
                 diskUnits[diskId][i] = objectIndex++;  // 设为已分配但未读取
             }
-            
-            // 更新标签空闲空间
-            // updateTagFreeSpace(diskId, tag, -consecutiveSize);
+
             
             // 创建并返回分配的块
             result.push_back({startPos, consecutiveSize});

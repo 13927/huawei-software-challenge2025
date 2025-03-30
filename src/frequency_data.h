@@ -7,6 +7,7 @@
 #include "object_manager.h"
 #include <tuple>
 #include <cmath>
+#include <cstdlib>  // 添加头文件以使用rand()函数
 
 
 // 存储和分析频率数据的类
