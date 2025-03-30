@@ -66,7 +66,7 @@ void DiskManager::initializePreallocatedSpace() {
         // 初始化每个标签的空闲空间
         for (const auto& [startUnit, endUnit, tag] : diskAllocations) {
             int rangeSize = endUnit - startUnit + 1;
-            diskTagFreeSpaces[diskId][tag] = rangeSize;
+            diskTagFreeSpaces[diskId][tag] += rangeSize;
         }
     }
 }

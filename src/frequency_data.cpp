@@ -499,58 +499,58 @@ void FrequencyData::allocateTagsToDiskUnits() {
         }
     }
     
-    // 在记录最终结果前，合并每个磁盘上相邻的同标签页面
-    std::map<int, std::vector<DiskRange>> mergedDiskAllocation;
-    std::map<int, std::vector<std::tuple<int, int, int>>> mergedTagAllocation;
+    // // 在记录最终结果前，合并每个磁盘上相邻的同标签页面
+    // std::map<int, std::vector<DiskRange>> mergedDiskAllocation;
+    // std::map<int, std::vector<std::tuple<int, int, int>>> mergedTagAllocation;
     
-    for (int disk = 1; disk <= diskCount; disk++) {
-        if (diskAllocationResult.find(disk) == diskAllocationResult.end()) continue;
+    // for (int disk = 1; disk <= diskCount; disk++) {
+    //     if (diskAllocationResult.find(disk) == diskAllocationResult.end()) continue;
         
-        // 按照起始位置排序，确保正确合并
-        std::sort(diskAllocationResult[disk].begin(), diskAllocationResult[disk].end(), 
-                 [](const DiskRange& a, const DiskRange& b) { return a.startUnit < b.startUnit; });
+    //     // 按照起始位置排序，确保正确合并
+    //     std::sort(diskAllocationResult[disk].begin(), diskAllocationResult[disk].end(), 
+    //              [](const DiskRange& a, const DiskRange& b) { return a.startUnit < b.startUnit; });
         
-        std::vector<DiskRange> mergedRanges;
+    //     std::vector<DiskRange> mergedRanges;
         
-        // 如果没有分配，则跳过
-        if (diskAllocationResult[disk].empty()) continue;
+    //     // 如果没有分配，则跳过
+    //     if (diskAllocationResult[disk].empty()) continue;
         
-        // 初始化第一个范围
-        DiskRange currentRange = diskAllocationResult[disk][0];
+    //     // 初始化第一个范围
+    //     DiskRange currentRange = diskAllocationResult[disk][0];
         
-        // 合并相邻的同标签范围
-        for (size_t i = 1; i < diskAllocationResult[disk].size(); i++) {
-            const DiskRange& nextRange = diskAllocationResult[disk][i];
+    //     // 合并相邻的同标签范围
+    //     for (size_t i = 1; i < diskAllocationResult[disk].size(); i++) {
+    //         const DiskRange& nextRange = diskAllocationResult[disk][i];
             
-            // 如果标签相同且范围相邻，则合并
-            if (nextRange.tag == currentRange.tag && nextRange.startUnit == currentRange.endUnit + 1) {
-                // 扩展当前范围到包含下一个范围
-                currentRange.endUnit = nextRange.endUnit;
-            } else {
-                // 否则，添加当前范围到结果中，并开始新的范围
-                mergedRanges.push_back(currentRange);
-                currentRange = nextRange;
-            }
-        }
+    //         // 如果标签相同且范围相邻，则合并
+    //         if (nextRange.tag == currentRange.tag && nextRange.startUnit == currentRange.endUnit + 1) {
+    //             // 扩展当前范围到包含下一个范围
+    //             currentRange.endUnit = nextRange.endUnit;
+    //         } else {
+    //             // 否则，添加当前范围到结果中，并开始新的范围
+    //             mergedRanges.push_back(currentRange);
+    //             currentRange = nextRange;
+    //         }
+    //     }
         
-        // 添加最后一个范围
-        mergedRanges.push_back(currentRange);
+    //     // 添加最后一个范围
+    //     mergedRanges.push_back(currentRange);
         
-        // 更新磁盘分配结果
-        mergedDiskAllocation[disk] = mergedRanges;
+    //     // 更新磁盘分配结果
+    //     mergedDiskAllocation[disk] = mergedRanges;
         
-        // 更新标签分配结果
-        for (const auto& range : mergedRanges) {
-            if (range.tag < 0) continue; // 跳过无效标签
+    //     // 更新标签分配结果
+    //     for (const auto& range : mergedRanges) {
+    //         if (range.tag < 0) continue; // 跳过无效标签
             
-            mergedTagAllocation[range.tag].push_back(
-                std::make_tuple(disk, range.startUnit, range.endUnit));
-        }
-    }
+    //         mergedTagAllocation[range.tag].push_back(
+    //             std::make_tuple(disk, range.startUnit, range.endUnit));
+    //     }
+    // }
     
-    // 用合并后的结果替换原始结果
-    diskAllocationResult = mergedDiskAllocation;
-    tagAllocationResult = mergedTagAllocation;
+    // // 用合并后的结果替换原始结果
+    // diskAllocationResult = mergedDiskAllocation;
+    // tagAllocationResult = mergedTagAllocation;
     
     #ifndef NDEBUG
     if (diskDebugFile.is_open()) {
@@ -569,43 +569,43 @@ void FrequencyData::allocateTagsToDiskUnits() {
     }
     #endif
     
-    // 分配虚拟标签0（用于未分配空间）
-    std::vector<std::tuple<int, int, int>> tag0Allocations;
+    // // 分配虚拟标签0（用于未分配空间）
+    // std::vector<std::tuple<int, int, int>> tag0Allocations;
     
-    for (int disk = 1; disk <= diskCount; disk++) {
-        // 收集已分配范围
-        std::vector<std::pair<int, int>> allocatedRanges;
-        for (const auto& range : diskAllocationResult[disk]) {
-            allocatedRanges.push_back({range.startUnit, range.endUnit});
-        }
+    // for (int disk = 1; disk <= diskCount; disk++) {
+    //     // 收集已分配范围
+    //     std::vector<std::pair<int, int>> allocatedRanges;
+    //     for (const auto& range : diskAllocationResult[disk]) {
+    //         allocatedRanges.push_back({range.startUnit, range.endUnit});
+    //     }
         
-        // 按起始位置排序
-        std::sort(allocatedRanges.begin(), allocatedRanges.end());
+    //     // 按起始位置排序
+    //     std::sort(allocatedRanges.begin(), allocatedRanges.end());
         
-        // 查找未分配范围
-        int currentPos = 1;
-        for (const auto& [start, end] : allocatedRanges) {
-            if (start > currentPos) {
-                // 找到未分配区域
-                DiskRange range = {currentPos, start - 1, 0}; // 标签0表示未分配
-                diskAllocationResult[disk].push_back(range);
-                tag0Allocations.push_back(std::make_tuple(disk, currentPos, start - 1));
-            }
-            currentPos = end + 1;
-        }
+    //     // 查找未分配范围
+    //     int currentPos = 1;
+    //     for (const auto& [start, end] : allocatedRanges) {
+    //         if (start > currentPos) {
+    //             // 找到未分配区域
+    //             DiskRange range = {currentPos, start - 1, 0}; // 标签0表示未分配
+    //             diskAllocationResult[disk].push_back(range);
+    //             tag0Allocations.push_back(std::make_tuple(disk, currentPos, start - 1));
+    //         }
+    //         currentPos = end + 1;
+    //     }
         
-        // 检查磁盘末尾是否有未分配空间
-        if (currentPos <= unitsPerDisk) {
-            DiskRange range = {currentPos, unitsPerDisk, 0};
-            diskAllocationResult[disk].push_back(range);
-            tag0Allocations.push_back(std::make_tuple(disk, currentPos, unitsPerDisk));
-        }
-    }
+    //     // 检查磁盘末尾是否有未分配空间
+    //     if (currentPos <= unitsPerDisk) {
+    //         DiskRange range = {currentPos, unitsPerDisk, 0};
+    //         diskAllocationResult[disk].push_back(range);
+    //         tag0Allocations.push_back(std::make_tuple(disk, currentPos, unitsPerDisk));
+    //     }
+    // }
     
-    // 将标签0的分配结果添加到tagAllocationResult
-    if (!tag0Allocations.empty()) {
-        tagAllocationResult[0] = tag0Allocations;
-    }
+    // // 将标签0的分配结果添加到tagAllocationResult
+    // if (!tag0Allocations.empty()) {
+    //     tagAllocationResult[0] = tag0Allocations;
+    // }
 }
 
 // 实现查询接口

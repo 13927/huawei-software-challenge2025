@@ -66,7 +66,7 @@ void globalPreprocessing() {
     // 分析数据并预分配空间
     freqData.analyzeAndPreallocate();
 
-    #ifndef NDEBUG
+    // #ifndef NDEBUG
     // 输出磁盘分配结果
     std::ofstream outFile("allocation_result.txt");
     if (outFile.is_open()) {
@@ -138,7 +138,7 @@ void globalPreprocessing() {
 
     }
     
-    #endif
+    // #endif
 }
 
 void timestamp_action()
